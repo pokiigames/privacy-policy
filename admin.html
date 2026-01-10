@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gyan Gaming - Admin Panel</title>
+    
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary-color: #4e54c8;
+            --secondary-color: #8f94fb;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        .dashboard {
+            background: white;
+            border-radius: 20px;
+            min-height: 90vh;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .sidebar {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            min-height: 100%;
+            padding: 30px 20px;
+        }
+        
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            padding: 12px 20px;
+            margin: 5px 0;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin: 15px 0;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-card i {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            opacity: 0.8;
+        }
+        
+        .stat-card h2 {
+            font-size: 2.5rem;
+            margin: 0;
+            font-weight: bold;
+        }
+        
+        .stat-card p {
+            opacity: 0.9;
+            margin: 5px 0 0 0;
+        }
+        
+        .user-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        
+        .table-hover tbody tr:hover {
+            background-color: rgba(78, 84, 200, 0.05);
+        }
+        
+        .badge-rank {
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        
+        .rank-1 { background: linear-gradient(135deg, #FFD700, #FFA500); color: #000; }
+        .rank-2 { background: linear-gradient(135deg, #C0C0C0, #808080); color: #000; }
+        .rank-3 { background: linear-gradient(135deg, #CD7F32, #8B4513); color: #fff; }
+        .rank-4 { background: linear-gradient(135deg, #4A90E2, #2E5A9E); color: #fff; }
+        .rank-5 { background: linear-gradient(135deg, #2E8B57, #1E5631); color: #fff; }
+        .rank-6 { background: linear-gradient(135deg, #808080, #505050); color: #fff; }
+        
+        .btn-custom {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        
+        .btn-custom:hover {
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(78, 84, 200, 0.3);
+        }
+        
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                min-height: auto;
+            }
+            .stat-card {
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Spinner -->
+    <div id="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Login Section -->
+    <div id="loginSection" class="login-container">
+        <div class="text-center mb-4">
+            <h2 class="fw-bold" style="color: var(--primary-color);">Gyan Gaming</h2>
+            <p class="text-muted">Admin Dashboard</p>
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">Email Address</label>
+            <input type="email" id="email" class="form-control form-control-lg" 
+                   placeholder="pal982565@gmail.com" value="pal982565@gmail.com">
+        </div>
+        
+        <div class="mb-4">
+            <label class="form-label">Password</label>
+            <input type="password" id="password" class="form-control form-control-lg" 
+                   placeholder="Enter your password">
+        </div>
+        
+        <button id="loginBtn" class="btn btn-custom w-100 btn-lg" onclick="login()">
+            <i class="fas fa-sign-in-alt me-2"></i> Login to Dashboard
+        </button>
+        
+        <div id="loginError" class="alert alert-danger mt-3 d-none"></div>
+        
+        <div class="text-center mt-4">
+            <p class="text-muted">For admin access only</p>
+        </div>
+    </div>
+
+    <!-- Dashboard Section -->
+    <div id="dashboard" class="d-none">
+        <div class="dashboard">
+            <div class="row g-0">
+                <!-- Sidebar -->
+                <div class="col-lg-3 col-xl-2">
+                    <div class="sidebar">
+                        <div class="text-center mb-4">
+                            <img src="https://via.placeholder.com/80" class="rounded-circle border border-3 border-white mb-2" 
+                                 width="80" height="80" alt="Admin">
+                            <h5 id="adminName" class="fw-bold">Admin</h5>
+                            <small id="adminEmail" class="opacity-75">pal982565@gmail.com</small>
+                        </div>
+                        
+                        <hr class="opacity-25">
+                        
+                        <nav class="nav flex-column">
+                            <a class="nav-link active" href="#" onclick="showSection('overview')">
+                                <i class="fas fa-tachometer-alt me-2"></i> Overview
+                            </a>
+                            <a class="nav-link" href="#" onclick="showSection('users')">
+                                <i class="fas fa-users me-2"></i> Users
+                                <span id="usersCountBadge" class="badge bg-light text-dark ms-auto">0</span>
+                            </a>
+                            <a class="nav-link" href="#" onclick="showSection('games')">
+                                <i class="fas fa-gamepad me-2"></i> Games Analytics
+                            </a>
+                            <a class="nav-link" href="#" onclick="showSection('reports')">
+                                <i class="fas fa-chart-line me-2"></i> Reports
+                            </a>
+                            <a class="nav-link" href="#" onclick="showSection('settings')">
+                                <i class="fas fa-cog me-2"></i> Settings
+                            </a>
+                        </nav>
+                        
+                        <div class="mt-auto pt-4">
+                            <button class="btn btn-outline-light w-100" onclick="logout()">
+                                <i class="fas fa-sign-out-alt me-2"></i> Logout
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Main Content -->
+                <div class="col-lg-9 col-xl-10">
+                    <div class="p-4">
+                        <!-- Header -->
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h3 id="sectionTitle" class="fw-bold text-dark">Dashboard Overview</h3>
+                            <div>
+                                <button class="btn btn-light me-2" onclick="refreshData()">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                                <button class="btn btn-custom" onclick="exportData()">
+                                    <i class="fas fa-download me-2"></i> Export
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Overview Section -->
+                        <div id="overviewSection" class="section-content">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="stat-card">
+                                        <i class="fas fa-users"></i>
+                                        <h2 id="totalUsers">0</h2>
+                                        <p>Total Users</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="stat-card">
+                                        <i class="fas fa-gamepad"></i>
+                                        <h2 id="totalGames">0</h2>
+                                        <p>Games Played</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="stat-card">
+                                        <i class="fas fa-star"></i>
+                                        <h2 id="totalScore">0</h2>
+                                        <p>Total Score</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="stat-card">
+                                        <i class="fas fa-trophy"></i>
+                                        <h2 id="avgScore">0</h2>
+                                        <p>Avg. Score</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Top Users -->
+                            <div class="card mt-4">
+                                <div class="card-header bg-white">
+                                    <h5 class="fw-bold mb-0">Top Players</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div id="topUsers" class="row">
+                                        <!-- Top users will load here -->
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Recent Activity -->
+                            <div class="row mt-4">
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-white">
+                                            <h5 class="fw-bold mb-0">Recent Users</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <div id="recentUsers">
+                                                <!-- Recent users will load here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-white">
+                                            <h5 class="fw-bold mb-0">Rank Distribution</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <div id="rankDistribution">
+                                                <!-- Rank chart will load here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Users Section -->
+                        <div id="usersSection" class="section-content d-none">
+                            <div class="card">
+                                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                                    <h5 class="fw-bold mb-0">All Users</h5>
+                                    <div class="d-flex">
+                                        <input type="text" id="searchInput" class="form-control me-2" 
+                                               placeholder="Search users..." style="width: 250px;">
+                                        <select id="sortSelect" class="form-select" style="width: 150px;">
+                                            <option value="score">Sort by Score</option>
+                                            <option value="gamesPlayed">Sort by Games</option>
+                                            <option value="name">Sort by Name</option>
+                                            <option value="rank">Sort by Rank</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>User</th>
+                                                    <th>Score</th>
+                                                    <th>Games</th>
+                                                    <th>Rank</th>
+                                                    <th>Last Active</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="usersTable">
+                                                <!-- Users will load here -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Games Analytics Section -->
+                        <div id="gamesSection" class="section-content d-none">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-white">
+                                            <h5 class="fw-bold mb-0">Games Performance</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <canvas id="gamesChart" height="250"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-white">
+                                            <h5 class="fw-bold mb-0">Daily Activity</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <canvas id="activityChart" height="250"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Reports Section -->
+                        <div id="reportsSection" class="section-content d-none">
+                            <div class="card">
+                                <div class="card-header bg-white">
+                                    <h5 class="fw-bold mb-0">Reports & Analytics</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div id="reportsContent">
+                                        <!-- Reports will load here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Settings Section -->
+                        <div id="settingsSection" class="section-content d-none">
+                            <div class="card">
+                                <div class="card-header bg-white">
+                                    <h5 class="fw-bold mb-0">Admin Settings</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <h6>Admin Emails</h6>
+                                                <div id="adminEmailsList" class="mb-3">
+                                                    <!-- Admin emails will load here -->
+                                                </div>
+                                                <div class="input-group">
+                                                    <input type="email" id="newAdminEmail" class="form-control" 
+                                                           placeholder="Add new admin email">
+                                                    <button class="btn btn-primary" onclick="addAdminEmail()">
+                                                        <i class="fas fa-plus"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <h6>System Settings</h6>
+                                                <div class="form-check form-switch mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="realTimeUpdates" checked>
+                                                    <label class="form-check-label" for="realTimeUpdates">
+                                                        Real-time Updates
+                                                    </label>
+                                                </div>
+                                                <button class="btn btn-warning" onclick="clearOldData()">
+                                                    <i class="fas fa-trash me-2"></i> Clear Old Data
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+        import { getDatabase, ref, get, onValue, set, update, remove } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-database.js";
+        
+        // Your Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBlmpJONrCu6wgsveViQAn52XI8SXIXPkU",
+            authDomain: "croomx-34cb0.firebaseapp.com",
+            databaseURL: "https://croomx-34cb0-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "croomx-34cb0",
+            storageBucket: "croomx-34cb0.firebasestorage.app",
+            messagingSenderId: "759188857295",
+            appId: "1:759188857295:web:5171e39e6b324c348072ba"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const database = getDatabase(app);
+        
+        // Make Firebase available globally
+        window.firebase = { auth, database, signInWithEmailAndPassword, signOut, ref, get, onValue, set, update, remove };
+        
+        // Hide loading spinner
+        document.getElementById('loading').style.display = 'none';
+    </script>
+    
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Main App Script -->
+    <script>
+        // Global variables
+        let currentUser = null;
+        let allUsers = [];
+        let realTimeListener = null;
+        
+        // Wait for Firebase to load
+        setTimeout(() => {
+            // Check if already logged in
+            if (window.firebase && window.firebase.auth) {
+                window.firebase.auth.onAuthStateChanged(async (user) => {
+                    if (user) {
+                        // Check if admin
+                        const isAdmin = await checkAdminEmail(user.email);
+                        if (isAdmin) {
+                            currentUser = user;
+                            showDashboard();
+                            loadAllData();
+                            setupRealTimeListeners();
+                        } else {
+                            showToast('Access denied. Not an admin.', 'danger');
+                            window.firebase.auth.signOut();
+                        }
+                    }
+                });
+            }
+        }, 1000);
+        
+        // Login function
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const loginBtn = document.getElementById('loginBtn');
+            
+            if (!email || !password) {
+                showError('Please enter email and password');
+                return;
+            }
+            
+            try {
+                loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Logging in...';
+                loginBtn.disabled = true;
+                
+                // First check if email is admin
+                const isAdmin = await checkAdminEmail(email);
+                if (!isAdmin) {
+                    showError('Access denied. This email is not registered as admin.');
+                    resetLoginButton();
+                    return;
+                }
+                
+                // Firebase authentication
+                const userCredential = await window.firebase.signInWithEmailAndPassword(
+                    window.firebase.auth, 
+                    email, 
+                    password
+                );
+                
+                currentUser = userCredential.user;
+                showDashboard();
+                loadAllData();
+                setupRealTimeListeners();
+                showToast('Login successful!', 'success');
+                
+            } catch (error) {
+                console.error('Login error:', error);
+                showError(error.message);
+                resetLoginButton();
+            }
+        }
+        
+        function resetLoginButton() {
+            const loginBtn = document.getElementById('loginBtn');
+            loginBtn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i> Login to Dashboard';
+            loginBtn.disabled = false;
+        }
+        
+        // Check if email is in admin list
+        async function checkAdminEmail(email) {
+            try {
+                const adminRef = window.firebase.ref(window.firebase.database, 'admins/admin_emails');
+                const snapshot = await window.firebase.get(adminRef);
+                
+                if (snapshot.exists()) {
+                    const adminData = snapshot.val();
+                    const emails = adminData.emails || [];
+                    return emails.includes(email);
+                }
+                return false;
+            } catch (error) {
+                console.error('Admin check error:', error);
+                return false;
+            }
+        }
+        
+        // Show dashboard
+        function showDashboard() {
+            document.getElementById('loginSection').classList.add('d-none');
+            document.getElementById('dashboard').classList.remove('d-none');
+            
+            // Update admin info
+            document.getElementById('adminName').textContent = currentUser.email.split('@')[0];
+            document.getElementById('adminEmail').textContent = currentUser.email;
+        }
+        
+        // Logout
+        function logout() {
+            window.firebase.signOut(window.firebase.auth).then(() => {
+                currentUser = null;
+                document.getElementById('loginSection').classList.remove('d-none');
+                document.getElementById('dashboard').classList.add('d-none');
+                
+                // Remove real-time listeners
+                if (realTimeListener) {
+                    realTimeListener();
+                }
+                
+                showToast('Logged out successfully', 'info');
+            });
+        }
+        
+        // Load all data
+        async function loadAllData() {
+            showLoading(true);
+            
+            try {
+                // Load users
+                const usersRef = window.firebase.ref(window.firebase.database, 'users');
+                const snapshot = await window.firebase.get(usersRef);
+                
+                if (snapshot.exists()) {
+                    const usersData = snapshot.val();
+                    allUsers = Object.entries(usersData).map(([userId, userData]) => ({
+                        id: userId,
+                        ...userData
+                    }));
+                    
+                    updateStats();
+                    updateUsersTable();
+                    updateTopUsers();
+                    updateRecentUsers();
+                    updateRankDistribution();
+                } else {
+                    allUsers = [];
+                }
+                
+                // Load admin emails
+                loadAdminEmails();
+                
+                // Initialize charts
+                initializeCharts();
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showToast('Error loading data: ' + error.message, 'danger');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // Update statistics
+        function updateStats() {
+            const totalUsers = allUsers.length;
+            const totalScore = allUsers.reduce((sum, user) => sum + (user.score || 0), 0);
+            const totalGames = allUsers.reduce((sum, user) => sum + (user.gamesPlayed || 0), 0);
+            const avgScore = totalUsers > 0 ? Math.round(totalScore / totalUsers) : 0;
+            
+            document.getElementById('totalUsers').textContent = totalUsers;
+            document.getElementById('totalScore').textContent = totalScore;
+            document.getElementById('totalGames').textContent = totalGames;
+            document.getElementById('avgScore').textContent = avgScore;
+            
+            // Update badge
+            document.getElementById('usersCountBadge').textContent = totalUsers;
+        }
+        
+        // Update users table
+        function updateUsersTable(sortBy = 'score', searchTerm = '') {
+            let filteredUsers = [...allUsers];
+            
+            // Apply search filter
+            if (searchTerm) {
+                const term = searchTerm.toLowerCase();
+                filteredUsers = filteredUsers.filter(user => 
+                    (user.name && user.name.toLowerCase().includes(term)) ||
+                    (user.email && user.email.toLowerCase().includes(term))
+                );
+            }
+            
+            // Apply sorting
+            filteredUsers.sort((a, b) => {
+                if (sortBy === 'score') return (b.score || 0) - (a.score || 0);
+                if (sortBy === 'gamesPlayed') return (b.gamesPlayed || 0) - (a.gamesPlayed || 0);
+                if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
+                if (sortBy === 'rank') return (a.rank || 6) - (b.rank || 6);
+                return 0;
+            });
+            
+            const usersTable = document.getElementById('usersTable');
+            usersTable.innerHTML = '';
+            
+            filteredUsers.forEach((user, index) => {
+                const lastActive = user.lastUpdated ? 
+                    new Date(user.lastUpdated).toLocaleDateString() : 'Never';
+                
+                const row = `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <img src="${user.profilePictureUrl || 'https://via.placeholder.com/40'}" 
+                                     class="user-avatar me-3" alt="${user.name}">
+                                <div>
+                                    <strong>${user.name || 'Unknown'}</strong><br>
+                                    <small class="text-muted">${user.email || 'No email'}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td><strong>${user.score || 0}</strong></td>
+                        <td>${user.gamesPlayed || 0}</td>
+                        <td>
+                            <span class="badge-rank rank-${user.rank || 6}">
+                                Rank ${user.rank || 6}
+                            </span>
+                        </td>
+                        <td>${lastActive}</td>
+                        <td>
+                            <button class="btn btn-sm btn-info me-1" onclick="viewUser('${user.id}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-warning" onclick="editUserScore('${user.id}')">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                usersTable.innerHTML += row;
+            });
+        }
+        
+        // Update top users
+        function updateTopUsers() {
+            const topUsers = [...allUsers]
+                .sort((a, b) => (b.score || 0) - (a.score || 0))
+                .slice(0, 5);
+            
+            const topUsersContainer = document.getElementById('topUsers');
+            topUsersContainer.innerHTML = '';
+            
+            topUsers.forEach((user, index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🏅';
+                
+                const userCard = `
+                    <div class="col">
+                        <div class="card text-center h-100">
+                            <div class="card-body">
+                                <h1 class="display-6">${medal}</h1>
+                                <img src="${user.profilePictureUrl || 'https://via.placeholder.com/60'}" 
+                                     class="rounded-circle mb-2" width="60" height="60">
+                                <h6 class="fw-bold">${user.name || 'Player'}</h6>
+                                <p class="text-muted mb-1">Score: ${user.score || 0}</p>
+                                <span class="badge bg-primary">Rank ${user.rank || 6}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                topUsersContainer.innerHTML += userCard;
+            });
+        }
+        
+        // Update recent users
+        function updateRecentUsers() {
+            const recentUsers = [...allUsers]
+                .sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0))
+                .slice(0, 5);
+            
+            const recentUsersContainer = document.getElementById('recentUsers');
+            recentUsersContainer.innerHTML = '';
+            
+            recentUsers.forEach(user => {
+                const timeAgo = user.lastUpdated ? 
+                    getTimeAgo(user.lastUpdated) : 'Never';
+                
+                const userItem = `
+                    <div class="d-flex align-items-center mb-3">
+                        <img src="${user.profilePictureUrl || 'https://via.placeholder.com/40'}" 
+                             class="rounded-circle me-3" width="40" height="40">
+                        <div class="flex-grow-1">
+                            <strong>${user.name || 'Unknown'}</strong><br>
+                            <small class="text-muted">${user.email || 'No email'}</small>
+                        </div>
+                        <div class="text-end">
+                            <small class="text-muted">${timeAgo}</small><br>
+                            <span class="badge bg-secondary">${user.score || 0} pts</span>
+                        </div>
+                    </div>
+                `;
+                recentUsersContainer.innerHTML += userItem;
+            });
+        }
+        
+        // Update rank distribution
+        function updateRankDistribution() {
+            const rankCounts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0};
+            
+            allUsers.forEach(user => {
+                const rank = user.rank || 6;
+                rankCounts[rank] = (rankCounts[rank] || 0) + 1;
+            });
+            
+            const rankContainer = document.getElementById('rankDistribution');
+            rankContainer.innerHTML = '';
+            
+            for (let rank = 1; rank <= 6; rank++) {
+                const count = rankCounts[rank] || 0;
+                const percentage = allUsers.length > 0 ? 
+                    Math.round((count / allUsers.length) * 100) : 0;
+                
+                const rankBar = `
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>Rank ${rank}</span>
+                            <span>${count} users (${percentage}%)</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar rank-${rank}" role="progressbar" 
+                                 style="width: ${percentage}%"></div>
+                        </div>
+                    </div>
+                `;
+                rankContainer.innerHTML += rankBar;
+            }
+        }
+        
+        // View user details
+        function viewUser(userId) {
+            const user = allUsers.find(u => u.id === userId);
+            if (!user) return;
+            
+            const modalContent = `
+                <div class="modal fade" id="userModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">User Details</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-md-4 text-center">
+                                        <img src="${user.profilePictureUrl || 'https://via.placeholder.com/150'}" 
+                                             class="rounded-circle img-fluid mb-3" width="150" height="150">
+                                        <h4>${user.name || 'Unknown'}</h4>
+                                        <p class="text-muted">${user.email || 'No email'}</p>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <table class="table">
+                                            <tr><th>User ID:</th><td><code>${userId}</code></td></tr>
+                                            <tr><th>Score:</th><td><strong>${user.score || 0}</strong></td></tr>
+                                            <tr><th>Games Played:</th><td>${user.gamesPlayed || 0}</td></tr>
+                                            <tr><th>Games This Month:</th><td>${user.gamesMon || 0}</td></tr>
+                                            <tr><th>Rank:</th><td><span class="badge-rank rank-${user.rank || 6}">Rank ${user.rank || 6}</span></td></tr>
+                                            <tr><th>Current Avatar:</th><td>${user.currentAvatar || 'default'}</td></tr>
+                                            <tr><th>Last Updated:</th><td>${user.lastUpdated ? new Date(user.lastUpdated).toLocaleString() : 'Never'}</td></tr>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal
+            const existingModal = document.getElementById('userModal');
+            if (existingModal) existingModal.remove();
+            
+            // Add new modal
+            document.body.insertAdjacentHTML('beforeend', modalContent);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('userModal'));
+            modal.show();
+        }
+        
+        // Edit user score
+        function editUserScore(userId) {
+            const user = allUsers.find(u => u.id === userId);
+            if (!user) return;
+            
+            const newScore = prompt(`Edit score for ${user.name || 'User'}:`, user.score || 0);
+            if (newScore !== null) {
+                const score = parseInt(newScore);
+                if (!isNaN(score)) {
+                    const userRef = window.firebase.ref(window.firebase.database, `users/${userId}`);
+                    
+                    // Calculate new rank based on score
+                    const newRank = calculateRank(score);
+                    
+                    window.firebase.update(userRef, {
+                        score: score,
+                        rank: newRank,
+                        lastUpdated: Date.now()
+                    }).then(() => {
+                        showToast('Score updated successfully!', 'success');
+                        // Real-time listener will auto-refresh
+                    }).catch(error => {
+                        showToast('Error updating score: ' + error.message, 'danger');
+                    });
+                } else {
+                    showToast('Please enter a valid number', 'warning');
+                }
+            }
+        }
+        
+        // Calculate rank based on score
+        function calculateRank(score) {
+            if (score >= 1000) return 1;
+            if (score >= 500) return 2;
+            if (score >= 250) return 3;
+            if (score >= 100) return 4;
+            if (score >= 50) return 5;
+            return 6;
+        }
+        
+        // Load admin emails
+        async function loadAdminEmails() {
+            try {
+                const adminRef = window.firebase.ref(window.firebase.database, 'admins/admin_emails');
+                const snapshot = await window.firebase.get(adminRef);
+                
+                const adminEmailsList = document.getElementById('adminEmailsList');
+                adminEmailsList.innerHTML = '';
+                
+                if (snapshot.exists()) {
+                    const adminData = snapshot.val();
+                    const emails = adminData.emails || [];
+                    
+                    emails.forEach(email => {
+                        const emailItem = `
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span>${email}</span>
+                                ${email !== currentUser.email ? 
+                                    `<button class="btn btn-sm btn-danger" onclick="removeAdminEmail('${email}')">
+                                        <i class="fas fa-times"></i>
+                                    </button>` : 
+                                    '<span class="badge bg-success">Current</span>'
+                                }
+                            </div>
+                        `;
+                        adminEmailsList.innerHTML += emailItem;
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading admin emails:', error);
+            }
+        }
+        
+        // Add admin email
+        async function addAdminEmail() {
+            const newEmail = document.getElementById('newAdminEmail').value.trim();
+            if (!newEmail) {
+                showToast('Please enter an email', 'warning');
+                return;
+            }
+            
+            if (!validateEmail(newEmail)) {
+                showToast('Please enter a valid email', 'warning');
+                return;
+            }
+            
+            try {
+                const adminRef = window.firebase.ref(window.firebase.database, 'admins/admin_emails');
+                const snapshot = await window.firebase.get(adminRef);
+                
+                let emails = [];
+                if (snapshot.exists()) {
+                    const adminData = snapshot.val();
+                    emails = adminData.emails || [];
+                    
+                    if (emails.includes(newEmail)) {
+                        showToast('Email already exists in admin list', 'warning');
+                        return;
+                    }
+                }
+                
+                emails.push(newEmail);
+                
+                await window.firebase.set(adminRef, { emails: emails });
+                
+                document.getElementById('newAdminEmail').value = '';
+                loadAdminEmails();
+                showToast('Admin email added successfully!', 'success');
+                
+            } catch (error) {
+                showToast('Error adding admin email: ' + error.message, 'danger');
+            }
+        }
+        
+        // Remove admin email
+        async function removeAdminEmail(email) {
+            if (email === currentUser.email) {
+                showToast('Cannot remove your own email', 'warning');
+                return;
+            }
+            
+            if (!confirm(`Remove ${email} from admin list?`)) return;
+            
+            try {
+                const adminRef = window.firebase.ref(window.firebase.database, 'admins/admin_emails');
+                const snapshot = await window.firebase.get(adminRef);
+                
+                if (snapshot.exists()) {
+                    const adminData = snapshot.val();
+                    let emails = adminData.emails || [];
+                    
+                    emails = emails.filter(e => e !== email);
+                    
+                    await window.firebase.set(adminRef, { emails: emails });
+                    
+                    loadAdminEmails();
+                    showToast('Admin email removed successfully!', 'success');
+                }
+            } catch (error) {
+                showToast('Error removing admin email: ' + error.message, 'danger');
+            }
+        }
+        
+        // Setup real-time listeners
+        function setupRealTimeListeners() {
+            if (realTimeListener) {
+                realTimeListener();
+            }
+            
+            const usersRef = window.firebase.ref(window.firebase.database, 'users');
+            realTimeListener = window.firebase.onValue(usersRef, (snapshot) => {
+                if (snapshot.exists()) {
+                    const usersData = snapshot.val();
+                    allUsers = Object.entries(usersData).map(([userId, userData]) => ({
+                        id: userId,
+                        ...userData
+                    }));
+                    
+                    updateStats();
+                    updateUsersTable();
+                    updateTopUsers();
+                    updateRecentUsers();
+                    updateRankDistribution();
+                }
+            });
+        }
+        
+        // Initialize charts
+        function initializeCharts() {
+            // Games chart
+            const gamesCtx = document.getElementById('gamesChart').getContext('2d');
+            new Chart(gamesCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Game 1', 'Game 2', 'Game 3', 'Game 4'],
+                    datasets: [{
+                        label: 'Plays',
+                        data: [120, 190, 130, 170],
+                        backgroundColor: 'rgba(78, 84, 200, 0.5)',
+                        borderColor: 'rgba(78, 84, 200, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+            
+            // Activity chart
+            const activityCtx = document.getElementById('activityChart').getContext('2d');
+            new Chart(activityCtx, {
+                type: 'line',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [{
+                        label: 'Active Users',
+                        data: [65, 59, 80, 81, 56, 55, 40],
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Show/hide sections
+        function showSection(sectionName) {
+            // Hide all sections
+            document.querySelectorAll('.section-content').forEach(el => {
+                el.classList.add('d-none');
+            });
+            
+            // Remove active class from all nav links
+            document.querySelectorAll('.sidebar .nav-link').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            // Show selected section
+            document.getElementById(sectionName + 'Section').classList.remove('d-none');
+            
+            // Add active class to clicked nav link
+            event.target.closest('.nav-link').classList.add('active');
+            
+            // Update section title
+            const titles = {
+                'overview': 'Dashboard Overview',
+                'users': 'User Management',
+                'games': 'Games Analytics',
+                'reports': 'Reports & Analytics',
+                'settings': 'Admin Settings'
+            };
+            document.getElementById('sectionTitle').textContent = titles[sectionName];
+        }
+        
+        // Search users
+        document.getElementById('searchInput')?.addEventListener('input', function() {
+            const searchTerm = this.value;
+            const sortBy = document.getElementById('sortSelect').value;
+            updateUsersTable(sortBy, searchTerm);
+        });
+        
+        // Sort users
+        document.getElementById('sortSelect')?.addEventListener('change', function() {
+            const sortBy = this.value;
+            const searchTerm = document.getElementById('searchInput').value;
+            updateUsersTable(sortBy, searchTerm);
+        });
+        
+        // Refresh data
+        function refreshData() {
+            loadAllData();
+            showToast('Data refreshed!', 'info');
+        }
+        
+        // Export data
+        function exportData() {
+            let csv = 'Name,Email,Score,Games Played,Rank,Last Updated\n';
+            
+            allUsers.forEach(user => {
+                csv += `"${user.name || ''}","${user.email || ''}",${user.score || 0},${user.gamesPlayed || 0},${user.rank || 6},"${user.lastUpdated ? new Date(user.lastUpdated).toLocaleString() : ''}"\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'gyan_gaming_users.csv';
+            a.click();
+            
+            showToast('Data exported successfully!', 'success');
+        }
+        
+        // Clear old data
+        function clearOldData() {
+            if (!confirm('Are you sure? This will delete all user data.')) return;
+            
+            showToast('Feature coming soon!', 'info');
+        }
+        
+        // Helper functions
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'flex' : 'none';
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('loginError');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('d-none');
+            setTimeout(() => errorDiv.classList.add('d-none'), 5000);
+        }
+        
+        function showToast(message, type = 'info') {
+            const toastId = 'toast-' + Date.now();
+            const toast = `
+                <div id="${toastId}" class="toast align-items-center text-white bg-${type} border-0" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('toastContainer').insertAdjacentHTML('beforeend', toast);
+            const toastElement = document.getElementById(toastId);
+            const bsToast = new bootstrap.Toast(toastElement, { delay: 3000 });
+            bsToast.show();
+            
+            toastElement.addEventListener('hidden.bs.toast', function () {
+                this.remove();
+            });
+        }
+        
+        function validateEmail(email) {
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return re.test(email);
+        }
+        
+        function getTimeAgo(timestamp) {
+            const now = Date.now();
+            const diff = now - timestamp;
+            
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(diff / 3600000);
+            const days = Math.floor(diff / 86400000);
+            
+            if (minutes < 1) return 'Just now';
+            if (minutes < 60) return `${minutes}m ago`;
+            if (hours < 24) return `${hours}h ago`;
+            return `${days}d ago`;
+        }
+        
+        // Initialize search and sort event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            // These are already initialized above, but keeping for completeness
+        });
+    </script>
+</body>
+</html>
