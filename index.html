@@ -4,12 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CroomX Admin</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="dns-prefetch" href="https://www.gstatic.com" />
+    <link rel="dns-prefetch" href="https://croomx-34cb0.firebaseapp.com" />
+    <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
     <style>
 /* CroomX Admin — dark theme */
 :root {
@@ -39,7 +36,7 @@
 html,
 body {
   min-height: 100%;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
@@ -657,6 +654,84 @@ tr.clickable {
     padding: 1rem;
   }
 }
+
+/* ── Bar chart (season leaderboard) ── */
+.chart-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.chart-panel h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.chart-wrap {
+  overflow-x: auto;
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.chart-wrap svg {
+  display: block;
+  min-width: 100%;
+}
+
+.chart-axis-label {
+  fill: #334155;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chart-tick {
+  fill: #64748b;
+  font-size: 11px;
+}
+
+.chart-bar-label {
+  fill: #1e293b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chart-value {
+  fill: #dc2626;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.season-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.season-form label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.season-form input {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
     </style>
   </head>
   <body>
@@ -711,6 +786,7 @@ tr.clickable {
           <a href="#/tasks" data-page="tasks"><span class="icon">✅</span> Daily Tasks</a>
           <a href="#/matches" data-page="matches"><span class="icon">🎮</span> Matches</a>
           <a href="#/ai" data-page="ai"><span class="icon">🤖</span> AI Control</a>
+          <a href="#/season" data-page="season"><span class="icon">🏆</span> Season</a>
         </nav>
         <div class="sidebar-footer">
           <div class="user-info">
@@ -737,7 +813,6 @@ tr.clickable {
 
     <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js';
-import { getAnalytics } from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-analytics.js';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -745,21 +820,7 @@ import {
   signInWithPopup,
   signOut,
 } from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js';
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  getFirestore,
-  limit,
-  orderBy,
-  query,
-  updateDoc,
-} from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js';
-import { get, getDatabase, ref } from 'https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js';
 
-// ── Firebase init ──
 const firebaseConfig = {
   apiKey: 'AIzaSyDHzblZuhac_ui920koRywonV7KOuOS9P4',
   authDomain: 'croomx-34cb0.firebaseapp.com',
@@ -768,15 +829,36 @@ const firebaseConfig = {
   storageBucket: 'croomx-34cb0.firebasestorage.app',
   messagingSenderId: '759188857295',
   appId: '1:759188857295:web:cf740da532581b088072ba',
-  measurementId: 'G-6R4ZK8X97R',
 };
 
 const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-try {
-  getAnalytics(app);
-} catch {
-  // Ignore on localhost or unsupported environments
+let dbReady = null;
+let firestore;
+let rtdb;
+let usersCol;
+let adminsDoc;
+let seasonConfigDoc;
+
+async function ensureDb() {
+  if (!dbReady) {
+    dbReady = (async () => {
+      const [{ getFirestore, collection, doc }, { getDatabase }] = await Promise.all([
+        import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js'),
+        import('https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js'),
+      ]);
+      firestore = getFirestore(app);
+      rtdb = getDatabase(app);
+      usersCol = collection(firestore, 'users');
+      adminsDoc = doc(firestore, 'admins', 'admin_emails');
+      seasonConfigDoc = doc(firestore, 'app_config', 'leaderboard');
+    })();
+  }
+  await dbReady;
+  return { firestore, rtdb, usersCol, adminsDoc, seasonConfigDoc };
 }
 
 // ── Config ──
@@ -881,21 +963,25 @@ function isAiRoom(data) {
   return data.isAiOpponent === true || isAiGuest(data.guest);
 }
 
-// ── API ──
-const auth = getAuth(app);
-const rtdb = getDatabase(app);
-const firestore = getFirestore(app);
+// ── API helpers (Firestore/RTDB loaded after login) ──
+let adminEmailsCache = null;
 
-const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
+async function fs() {
+  await ensureDb();
+  return import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js');
+}
 
-const usersCol = collection(firestore, 'users');
-const adminsDoc = doc(firestore, 'admins', 'admin_emails');
+async function rtdbApi() {
+  await ensureDb();
+  return import('https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js');
+}
 
 async function isEmailAdmin(email) {
   const normalized = (email || '').toLowerCase().trim();
   if (!normalized) return false;
   try {
+    await ensureDb();
+    const { getDoc } = await fs();
     const snap = await getDoc(adminsDoc);
     if (!snap.exists()) return normalized === DEFAULT_ADMIN_EMAIL.toLowerCase();
     const emails = (snap.data().emails || []).map((e) => e.toLowerCase().trim());
@@ -906,22 +992,119 @@ async function isEmailAdmin(email) {
 }
 
 async function resolveAdminEmails() {
+  if (adminEmailsCache) return adminEmailsCache;
   try {
+    await ensureDb();
+    const { getDoc } = await fs();
     const snap = await getDoc(adminsDoc);
-    if (!snap.exists()) return new Set([DEFAULT_ADMIN_EMAIL.toLowerCase()]);
+    if (!snap.exists()) {
+      adminEmailsCache = new Set([DEFAULT_ADMIN_EMAIL.toLowerCase()]);
+      return adminEmailsCache;
+    }
     const emails = (snap.data().emails || [DEFAULT_ADMIN_EMAIL])
       .map((e) => e.toLowerCase().trim())
       .filter(Boolean);
-    return new Set(emails.length ? emails : [DEFAULT_ADMIN_EMAIL.toLowerCase()]);
+    adminEmailsCache = new Set(emails.length ? emails : [DEFAULT_ADMIN_EMAIL.toLowerCase()]);
+    return adminEmailsCache;
   } catch {
-    return new Set([DEFAULT_ADMIN_EMAIL.toLowerCase()]);
+    adminEmailsCache = new Set([DEFAULT_ADMIN_EMAIL.toLowerCase()]);
+    return adminEmailsCache;
   }
+}
+
+const DEFAULT_SEASON_ID = 's1';
+
+function seasonFromData(data) {
+  const seasonId = (data.currentSeasonId || DEFAULT_SEASON_ID).toLowerCase();
+  const seasonNumber =
+    Number(data.seasonNumber) ||
+    Number(seasonId.replace(/^s/i, '')) ||
+    1;
+  const seasonLabel = data.seasonLabel || `Season ${seasonNumber}`;
+  return { seasonId, seasonNumber, seasonLabel };
+}
+
+async function getSeasonConfig() {
+  await ensureDb();
+  const { getDoc } = await fs();
+  const snap = await getDoc(seasonConfigDoc);
+  if (!snap.exists()) {
+    return { seasonId: DEFAULT_SEASON_ID, seasonNumber: 1, seasonLabel: 'Season 1' };
+  }
+  return seasonFromData(snap.data());
+}
+
+async function saveSeasonConfig(config) {
+  await ensureDb();
+  const { setDoc } = await fs();
+  await setDoc(
+    seasonConfigDoc,
+    {
+      currentSeasonId: config.seasonId.toLowerCase(),
+      seasonNumber: config.seasonNumber,
+      seasonLabel: config.seasonLabel,
+    },
+    { merge: true },
+  );
+}
+
+function userMatchesSeason(data, seasonId) {
+  return (data.currentSeasonId || DEFAULT_SEASON_ID).toLowerCase() === seasonId.toLowerCase();
+}
+
+async function getSeasonLeaderboard(seasonId, max = 10) {
+  await ensureDb();
+  const { getDocs, limit, orderBy, query, whereEqualTo } = await fs();
+  try {
+    const q = query(
+      usersCol,
+      whereEqualTo('currentSeasonId', seasonId.toLowerCase()),
+      orderBy('score', 'desc'),
+      limit(max),
+    );
+    const snap = await getDocs(q);
+    if (snap.docs.length) {
+      return snap.docs.map((d, i) => ({ ...userFromMap(d.id, d.data()), rank: i + 1 }));
+    }
+  } catch {
+    // Fall back when composite index is missing.
+  }
+
+  const q = query(usersCol, orderBy('score', 'desc'), limit(200));
+  const snap = await getDocs(q);
+  return snap.docs
+    .filter((d) => userMatchesSeason(d.data(), seasonId))
+    .slice(0, max)
+    .map((d, i) => ({ ...userFromMap(d.id, d.data()), rank: i + 1 }));
+}
+
+async function getSeasonStats(seasonId) {
+  await ensureDb();
+  const { getDocs } = await fs();
+  const adminEmails = await resolveAdminEmails();
+  const snap = await getDocs(usersCol);
+  let players = 0;
+  let totalScore = 0;
+  let activeToday = 0;
+  const now = Date.now();
+
+  snap.docs.forEach((d) => {
+    const user = userFromMap(d.id, d.data());
+    if (isAdminUser(user, adminEmails)) return;
+    if (!userMatchesSeason(d.data(), seasonId)) return;
+    players++;
+    totalScore += user.score;
+    const loginRef = user.lastLogin > 0 ? user.lastLogin : user.lastUpdated;
+    if (now - loginRef <= ACTIVE_TODAY_MS) activeToday++;
+  });
+
+  return { players, totalScore, activeToday, avgScore: players ? Math.round(totalScore / players) : 0 };
 }
 
 async function getDashboardStats() {
   const now = Date.now();
-  const adminEmails = await resolveAdminEmails();
-  const snapshot = await getDocs(usersCol);
+  const { getDocs } = await fs();
+  const [adminEmails, snapshot] = await Promise.all([resolveAdminEmails(), getDocs(usersCol)]);
 
   const online = [];
   const today = [];
@@ -962,12 +1145,14 @@ async function getDashboardStats() {
 }
 
 async function getAllUsers() {
+  const { getDocs, limit, orderBy, query } = await fs();
   const q = query(usersCol, orderBy('lastUpdated', 'desc'), limit(500));
   const snap = await getDocs(q);
   return snap.docs.map((d) => userFromMap(d.id, d.data()));
 }
 
 async function getTopUsers() {
+  const { getDocs, limit, orderBy, query } = await fs();
   const q = query(usersCol, orderBy('score', 'desc'), limit(100));
   const snap = await getDocs(q);
   return snap.docs.map((d, i) => ({ ...userFromMap(d.id, d.data()), rank: i + 1 }));
@@ -987,12 +1172,14 @@ async function searchUsers(q) {
 }
 
 async function getUserById(id) {
+  const { doc, getDoc } = await fs();
   const snap = await getDoc(doc(firestore, 'users', id));
   if (!snap.exists()) throw new Error('User not found');
   return userFromMap(snap.id, snap.data());
 }
 
 async function updateUser(id, updates) {
+  const { doc, updateDoc } = await fs();
   await updateDoc(doc(firestore, 'users', id), {
     ...updates,
     lastUpdated: Date.now(),
@@ -1000,6 +1187,7 @@ async function updateUser(id, updates) {
 }
 
 async function deleteUser(id) {
+  const { deleteDoc, doc } = await fs();
   await deleteDoc(doc(firestore, 'users', id));
 }
 
@@ -1053,8 +1241,8 @@ function buildTaskRow(docData, user, adminEmails) {
 }
 
 async function getDailyTasks() {
-  const adminEmails = await resolveAdminEmails();
-  const snap = await getDocs(usersCol);
+  const { getDocs } = await fs();
+  const [adminEmails, snap] = await Promise.all([resolveAdminEmails(), getDocs(usersCol)]);
   return snap.docs
     .map((d) => buildTaskRow(d.data(), userFromMap(d.id, d.data()), adminEmails))
     .filter(Boolean)
@@ -1065,14 +1253,19 @@ async function getDailyTasks() {
     });
 }
 
+function parseRtdbRooms(snap) {
+  return snap.exists() ? snap.val() : null;
+}
+
 async function getMatches(aiOnly) {
   const start = startOfToday();
+  const { get, ref } = await rtdbApi();
+  const snaps = await Promise.all(GAME_PATHS.map(({ path }) => get(ref(rtdb, path))));
   const records = [];
 
-  for (const { path, label } of GAME_PATHS) {
-    const snap = await get(ref(rtdb, path));
-    if (!snap.exists()) continue;
-    const rooms = snap.val();
+  GAME_PATHS.forEach(({ path, label }, i) => {
+    const rooms = parseRtdbRooms(snaps[i]);
+    if (!rooms) return;
     for (const [code, data] of Object.entries(rooms)) {
       const isAi = isAiRoom(data);
       if (aiOnly && !isAi) continue;
@@ -1093,16 +1286,18 @@ async function getMatches(aiOnly) {
         isAi: isAi,
       });
     }
-  }
+  });
   return records.sort((a, b) => b.endedAt - a.endedAt);
 }
 
 async function getAiRecords() {
+  const { get, ref } = await rtdbApi();
+  const snaps = await Promise.all(GAME_PATHS.map(({ path }) => get(ref(rtdb, path))));
   const records = [];
-  for (const { path, label } of GAME_PATHS) {
-    const snap = await get(ref(rtdb, path));
-    if (!snap.exists()) continue;
-    const rooms = snap.val();
+
+  GAME_PATHS.forEach(({ path, label }, i) => {
+    const rooms = parseRtdbRooms(snaps[i]);
+    if (!rooms) return;
     for (const [code, data] of Object.entries(rooms)) {
       if (!isAiRoom(data)) continue;
       const ended = data.gameEnded === true;
@@ -1117,8 +1312,75 @@ async function getAiRecords() {
         betAmount: Number(data.betAmount ?? 0),
       });
     }
-  }
+  });
   return records.sort((a, b) => b.joinedAt - a.joinedAt);
+}
+
+const CHART_COLORS = ['#22c55e', '#3b82f6', '#eab308', '#ec4899', '#a855f7', '#f97316', '#06b6d4', '#ef4444'];
+
+function renderBarChart(labels, values, { yLabel = 'Score', xLabel = 'Top players' } = {}) {
+  if (!labels.length) {
+    return '<p class="empty">No chart data yet.</p>';
+  }
+
+  const maxVal = Math.max(...values, 1);
+  const yMax = Math.max(10, Math.ceil(maxVal / 5) * 5);
+  const tickStep = yMax <= 10 ? 1 : Math.ceil(yMax / 10);
+  const ticks = [];
+  for (let v = 0; v <= yMax; v += tickStep) ticks.push(v);
+
+  const barW = 52;
+  const gap = 28;
+  const chartH = 260;
+  const padL = 56;
+  const padR = 28;
+  const padT = 28;
+  const padB = 72;
+  const innerW = labels.length * barW + (labels.length - 1) * gap;
+  const width = padL + innerW + padR;
+  const height = padT + chartH + padB;
+  const gridLines = ticks
+    .map((t) => {
+      const y = padT + chartH - (t / yMax) * chartH;
+      return `<line x1="${padL}" y1="${y}" x2="${width - padR}" y2="${y}" stroke="#cbd5e1" stroke-width="1"/>`;
+    })
+    .join('');
+
+  const yLabels = ticks
+    .map((t) => {
+      const y = padT + chartH - (t / yMax) * chartH;
+      return `<text class="chart-tick" x="${padL - 10}" y="${y + 4}" text-anchor="end">${t}</text>`;
+    })
+    .join('');
+
+  const bars = labels
+    .map((label, i) => {
+      const val = values[i];
+      const h = Math.max(2, (val / yMax) * chartH);
+      const x = padL + i * (barW + gap);
+      const y = padT + chartH - h;
+      const color = CHART_COLORS[i % CHART_COLORS.length];
+      const guideY = y;
+      const short = label.length > 10 ? `${label.slice(0, 9)}…` : label;
+      return `
+        <rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${color}" rx="4"/>
+        <line x1="${padL - 4}" y1="${guideY}" x2="${x + barW / 2}" y2="${guideY}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text class="chart-value" x="${padL - 8}" y="${guideY + 4}" text-anchor="end">${val}</text>
+        <text class="chart-bar-label" x="${x + barW / 2}" y="${padT + chartH + 22}" text-anchor="middle">${esc(short)}</text>
+      `;
+    })
+    .join('');
+
+  return `
+    <div class="chart-wrap">
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(yLabel)} bar chart">
+        ${gridLines}
+        ${yLabels}
+        ${bars}
+        <text class="chart-axis-label" x="16" y="${padT + chartH / 2}" transform="rotate(-90 16 ${padT + chartH / 2})" text-anchor="middle">${esc(yLabel)}</text>
+        <text class="chart-axis-label" x="${padL + innerW / 2}" y="${height - 12}" text-anchor="middle">${esc(xLabel)}</text>
+      </svg>
+    </div>`;
 }
 
 // ── App ──
@@ -1140,6 +1402,7 @@ const routes = {
   tasks: renderTasks,
   matches: renderMatches,
   ai: renderAi,
+  season: renderSeason,
 };
 
 function show(el) {
@@ -1524,8 +1787,141 @@ async function renderAi() {
     </div>`;
 }
 
+async function renderSeason() {
+  const config = await getSeasonConfig();
+  const [leaderboard, stats] = await Promise.all([
+    getSeasonLeaderboard(config.seasonId, 10),
+    getSeasonStats(config.seasonId),
+  ]);
+
+  const chartLabels = leaderboard.slice(0, 5).map((u) => u.name || playerId(u));
+  const chartValues = leaderboard.slice(0, 5).map((u) => u.score);
+
+  pageContent.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2>Season</h2>
+        <p class="subtitle">${esc(config.seasonLabel)} • ${esc(config.seasonId.toUpperCase())}</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-outline btn-sm" id="season-refresh">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="label">Season number</div><div class="value blue">${config.seasonNumber}</div></div>
+      <div class="stat-card"><div class="label">Players in season</div><div class="value">${stats.players}</div></div>
+      <div class="stat-card"><div class="label">Active today</div><div class="value green">${stats.activeToday}</div></div>
+      <div class="stat-card"><div class="label">Average score</div><div class="value">${stats.avgScore}</div></div>
+    </div>
+    <div class="chart-panel">
+      <h3>Top player scores — ${esc(config.seasonLabel)}</h3>
+      ${renderBarChart(chartLabels, chartValues, { yLabel: 'Score', xLabel: 'Top players' })}
+    </div>
+    <div class="panel">
+      <h3>Season config (Firestore: app_config / leaderboard)</h3>
+      <form id="season-form" class="season-form">
+        <div>
+          <label for="season-id">Season ID</label>
+          <input id="season-id" value="${esc(config.seasonId)}" required />
+        </div>
+        <div>
+          <label for="season-number">Season number</label>
+          <input id="season-number" type="number" min="1" value="${config.seasonNumber}" required />
+        </div>
+        <div>
+          <label for="season-label">Season label</label>
+          <input id="season-label" value="${esc(config.seasonLabel)}" required />
+        </div>
+      </form>
+      <div class="page-actions">
+        <button type="button" class="btn btn-outline btn-sm" id="season-next">Next season</button>
+        <button type="submit" form="season-form" class="btn btn-primary btn-sm">Save config</button>
+      </div>
+      <p id="season-msg" class="subtitle" style="margin-top:0.75rem"></p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Rank</th><th>Player</th><th>Code</th><th class="text-right">Score</th><th class="text-right">Games</th><th>Last active</th></tr></thead>
+        <tbody>
+          ${
+            leaderboard.length === 0
+              ? '<tr><td colspan="6" class="empty">No players in this season yet.</td></tr>'
+              : leaderboard
+                  .map(
+                    (u) => `<tr>
+            <td>#${u.rank}</td>
+            <td>${esc(u.name || 'Unnamed')}</td>
+            <td>${esc(playerId(u))}</td>
+            <td class="text-right">${u.score}</td>
+            <td class="text-right">${u.gamesPlayed}</td>
+            <td>${fmtRelative(u.lastUpdated)}</td>
+          </tr>`,
+                  )
+                  .join('')
+          }
+        </tbody>
+      </table>
+    </div>`;
+
+  const msg = $('#season-msg');
+
+  $('#season-refresh').onclick = () => void renderSeason();
+
+  $('#season-next').onclick = () => {
+    const nextNum = Number($('#season-number').value || config.seasonNumber) + 1;
+    $('#season-number').value = String(nextNum);
+    $('#season-id').value = `s${nextNum}`;
+    $('#season-label').value = `Season ${nextNum}`;
+    msg.textContent = 'Fields updated — click Save config to apply.';
+  };
+
+  $('#season-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const saveBtn = document.querySelector('button[form="season-form"]');
+    if (saveBtn) saveBtn.disabled = true;
+    msg.textContent = 'Saving…';
+    try {
+      const next = {
+        seasonId: $('#season-id').value.trim().toLowerCase(),
+        seasonNumber: Number($('#season-number').value),
+        seasonLabel: $('#season-label').value.trim(),
+      };
+      if (!next.seasonId || !next.seasonLabel || !next.seasonNumber) {
+        throw new Error('All season fields are required.');
+      }
+      await saveSeasonConfig(next);
+      msg.textContent = 'Season config saved to Firestore.';
+      await renderSeason();
+    } catch (err) {
+      msg.textContent = err.message || 'Failed to save season config.';
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  };
+}
+
 // Auth
-$('#btn-google-signin').onclick = () => signInWithPopup(auth, googleProvider);
+const signInBtn = $('#btn-google-signin');
+signInBtn.onclick = async () => {
+  signInBtn.disabled = true;
+  signInBtn.textContent = 'Signing in…';
+  try {
+    await signInWithPopup(auth, googleProvider);
+  } catch (err) {
+    signInBtn.disabled = false;
+    signInBtn.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24">
+        <path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+        <path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+        <path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      Sign in with Google`;
+    if (err?.code !== 'auth/popup-closed-by-user') {
+      alert(err.message || 'Sign-in failed');
+    }
+  }
+};
 $('#btn-signout-denied').onclick = () => signOut(auth);
 $('#btn-signout').onclick = () => signOut(auth);
 $('#menu-btn').onclick = () => sidebar.classList.toggle('open');
@@ -1535,6 +1931,15 @@ window.navigate = navigate;
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (!user) {
+    signInBtn.disabled = false;
+    signInBtn.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24">
+        <path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+        <path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+        <path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      Sign in with Google`;
     show(loginScreen);
     return;
   }
@@ -1545,6 +1950,7 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
 
+  await ensureDb();
   show(appShell);
   $('#user-name').textContent = user.displayName || 'Admin';
   $('#user-email').textContent = user.email || '';
