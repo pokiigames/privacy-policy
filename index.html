@@ -1,811 +1,94 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Poki Games Free Online Games Play Now</title>
-    <link rel="icon" type="image/png" href="data:image/jpeg;base64,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">
-    <meta property="og:title" content="Online Poki Games Free | PLAY GAME |" />
-    <meta name="description" content="ONLINE GAMES | FREE GAMES WITHOUT DOWNLOAD PLAY FREE | CAR| PUZZLE | SNAKE GAME | ">
-    <meta name="keywords" content="ONLINE GAME. FREE GAME. PLAY ONLINE. WITHOUT DOENLOAD. POKI GAME. CRAZY GAME. ">
-    <meta property="og:site_name" content="ONLINE GAMES">
-    <meta property="og:image" content="https://images.unsplash.com/photo-1550745165-9bc0b252726f?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80">
-    <meta property="og:url" content="https://pokiigames.online">
-    <meta name="theme-color" content="#ff6b6b">
-    
-    <!-- Styles -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-        body {
-            background-color: #f5f5f5;
-            color: #333;
-        }
-
-        /* Navigation */
-        .navbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 15px 5%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-        }
-
-        .logo {
-            color: white;
-            font-size: 1.8rem;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .logo i {
-            font-size: 2rem;
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 25px;
-        }
-
-        .nav-links a {
-            color: white;
-            text-decoration: none;
-            font-size: 1.1rem;
-            transition: 0.3s;
-            padding: 8px 15px;
-            border-radius: 5px;
-        }
-
-        .nav-links a:hover {
-            background: rgba(255,255,255,0.2);
-        }
-
-        .search-bar {
-            display: flex;
-            gap: 10px;
-        }
-
-        .search-bar input {
-            padding: 10px 15px;
-            border: none;
-            border-radius: 25px;
-            width: 250px;
-            outline: none;
-        }
-
-        .search-bar button {
-            background: white;
-            border: none;
-            width: 45px;
-            height: 45px;
-            border-radius: 50%;
-            cursor: pointer;
-            color: #667eea;
-            font-size: 1.1rem;
-        }
-
-        /* Hero Section */
-        .hero {
-            background: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), 
-                        url('https://images.unsplash.com/photo-1550745165-9bc0b252726f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80');
-            background-size: cover;
-            background-position: center;
-            height: 400px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            color: white;
-            padding: 20px;
-        }
-
-        .hero-content h1 {
-            font-size: 3.5rem;
-            margin-bottom: 20px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-        }
-
-        .hero-content p {
-            font-size: 1.3rem;
-            margin-bottom: 30px;
-        }
-
-        .play-now-btn {
-            background: linear-gradient(45deg, #ff6b6b, #ff8e53);
-            color: white;
-            padding: 15px 40px;
-            border: none;
-            border-radius: 50px;
-            font-size: 1.2rem;
-            font-weight: bold;
-            cursor: pointer;
-            transition: transform 0.3s, box-shadow 0.3s;
-            text-decoration: none;
-            display: inline-block;
-        }
-
-        .play-now-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 20px rgba(255,107,107,0.3);
-        }
-
-        /* Categories */
-        .categories {
-            padding: 50px 5%;
-        }
-
-        .section-title {
-            font-size: 2.2rem;
-            margin-bottom: 30px;
-            color: #333;
-            text-align: center;
-        }
-
-        .category-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 25px;
-            margin-bottom: 50px;
-        }
-
-        .category-card {
-            background: white;
-            border-radius: 15px;
-            padding: 30px 20px;
-            text-align: center;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            transition: transform 0.3s, box-shadow 0.3s;
-            cursor: pointer;
-        }
-
-        .category-card:hover {
-            transform: translateY(-10px);
-            box-shadow: 0 15px 30px rgba(0,0,0,0.2);
-        }
-
-        .category-icon {
-            font-size: 3rem;
-            margin-bottom: 20px;
-            color: #667eea;
-        }
-
-        .category-card h3 {
-            font-size: 1.4rem;
-            color: #333;
-        }
-
-        /* Games Grid */
-        .games-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 30px;
-            padding: 0 5%;
-            margin-bottom: 60px;
-        }
-
-        .game-card {
-            background: white;
-            border-radius: 15px;
-            overflow: hidden;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            transition: transform 0.3s;
-        }
-
-        .game-card:hover {
-            transform: translateY(-10px);
-        }
-
-        .game-image {
-            width: 100%;
-            height: 200px;
-            object-fit: cover;
-        }
-
-        .game-info {
-            padding: 20px;
-        }
-
-        .game-title {
-            font-size: 1.3rem;
-            margin-bottom: 10px;
-            color: #333;
-        }
-
-        .game-description {
-            color: #666;
-            margin-bottom: 15px;
-            line-height: 1.5;
-        }
-
-        .game-meta {
-            display: flex;
-            justify-content: space-between;
-            color: #888;
-            font-size: 0.9rem;
-        }
-
-        .play-btn {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            border: none;
-            padding: 12px 25px;
-            border-radius: 25px;
-            cursor: pointer;
-            font-weight: bold;
-            width: 100%;
-            margin-top: 15px;
-            transition: opacity 0.3s;
-        }
-
-        .play-btn:hover {
-            opacity: 0.9;
-        }
-
-        /* Featured Game */
-        .featured-game {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            padding: 50px 5%;
-            margin: 40px 0;
-            border-radius: 20px;
-            margin: 40px 5%;
-            display: flex;
-            align-items: center;
-            gap: 50px;
-        }
-
-        .featured-content {
-            flex: 1;
-        }
-
-        .featured-content h2 {
-            font-size: 2.5rem;
-            margin-bottom: 20px;
-        }
-
-        .featured-content p {
-            font-size: 1.2rem;
-            margin-bottom: 30px;
-            opacity: 0.9;
-        }
-
-        .featured-image {
-            flex: 1;
-            border-radius: 15px;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        }
-
-        .featured-image img {
-            width: 100%;
-            height: 300px;
-            object-fit: cover;
-        }
-
-        /* Footer */
-        footer {
-            background: #333;
-            color: white;
-            padding: 50px 5% 20px;
-        }
-
-        .footer-content {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 40px;
-            margin-bottom: 40px;
-        }
-
-        .footer-section h3 {
-            font-size: 1.5rem;
-            margin-bottom: 20px;
-            color: #667eea;
-        }
-
-        .footer-links {
-            list-style: none;
-        }
-
-        .footer-links li {
-            margin-bottom: 10px;
-        }
-
-        .footer-links a {
-            color: #ddd;
-            text-decoration: none;
-            transition: color 0.3s;
-        }
-
-        .footer-links a:hover {
-            color: #667eea;
-        }
-
-        .copyright {
-            text-align: center;
-            padding-top: 20px;
-            border-top: 1px solid #444;
-            color: #aaa;
-        }
-
-        /* Responsive Design */
-        @media (max-width: 768px) {
-            .navbar {
-                flex-direction: column;
-                gap: 15px;
-                padding: 15px;
-            }
-            
-            .nav-links {
-                flex-wrap: wrap;
-                justify-content: center;
-            }
-            
-            .search-bar input {
-                width: 200px;
-            }
-            
-            .hero-content h1 {
-                font-size: 2.5rem;
-            }
-            
-            .featured-game {
-                flex-direction: column;
-                text-align: center;
-            }
-            
-            .category-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        @media (max-width: 480px) {
-            .category-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .games-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .hero-content h1 {
-                font-size: 2rem;
-            }
-        }
-
-        /* Game Modal */
-        .game-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.9);
-            z-index: 1001;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .modal-content {
-            background: white;
-            padding: 4px;
-            border-radius: 1px;
-            width: 100%;
-            max-width: 800px;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .close-modal {
-            float: right;
-            font-size: 0rem;
-            cursor: pointer;
-            color: #333;
-        }
-
-        .modal-game-title {
-            font-size: 2rem;
-            margin: 1px 0;
-            color: #333;
-        }
-
-        .modal-game-frame {
-            width: 100%;
-            height: 500px;
-            border: none;
-            border-radius: 1px;
-            margin: 1px 0;
-        }
-    </style>
-</head>
-<body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="logo">
-            <i class="fas fa-gamepad"></i>
-            <h1>POKI GAMES</h1>
-        </div>
-        <div class="nav-links">
-            <a href="#home">Home</a>
-            <a href="#categories">Categories</a>
-            <a href="#trending">Trending</a>
-            <a href="#new">New Games</a>
-            <a href="#multiplayer">Multiplayer</a>
-            <a href="#girls">Girls Games</a>
-        </div>
-        <div class="search-bar">
-            <input type="text" placeholder="Search games..." id="searchInput">
-            <button onclick="searchGames()"><i class="fas fa-search"></i></button>
-        </div>
-    </nav>
-
-    <!-- Hero Section -->
-    <section class="hero" id="home">
-        <div class="hero-content">
-            <h1>PLAY FREE ONLINE GAMES</h1>
-            <p>Thousands of exciting games without download! Play now for free.</p>
-            <a href="#games" class="play-now-btn">PLAY NOW <i class="fas fa-play-circle"></i></a>
-        </div>
-    </section>
-
-    <!-- Categories -->
-    <section class="categories" id="categories">
-        <h2 class="section-title">GAME CATEGORIES</h2>
-        <div class="category-grid">
-            <div class="category-card" onclick="filterCategory('action')">
-                <div class="category-icon">
-                    <i class="fas fa-fighter-jet"></i>
-                </div>
-                <h3>Action Games</h3>
-            </div>
-            <div class="category-card" onclick="filterCategory('puzzle')">
-                <div class="category-icon">
-                    <i class="fas fa-puzzle-piece"></i>
-                </div>
-                <h3>Puzzle Games</h3>
-            </div>
-            <div class="category-card" onclick="filterCategory('car')">
-                <div class="category-icon">
-                    <i class="fas fa-car"></i>
-                </div>
-                <h3>Car Games</h3>
-            </div>
-            <div class="category-card" onclick="filterCategory('sports')">
-                <div class="category-icon">
-                    <i class="fas fa-basketball-ball"></i>
-                </div>
-                <h3>Sports Games</h3>
-            </div>
-            <div class="category-card" onclick="filterCategory('girls')">
-                <div class="category-icon">
-                    <i class="fas fa-heart"></i>
-                </div>
-                <h3>Girls Games</h3>
-            </div>
-            <div class="category-card" onclick="filterCategory('multiplayer')">
-                <div class="category-icon">
-                    <i class="fas fa-users"></i>
-                </div>
-                <h3>Multiplayer</h3>
-            </div>
-        </div>
-    </section>
-
-    <!-- Featured Game -->
-    <section class="featured-game">
-        <div class="featured-content">
-            <h2>FEATURED GAME</h2>
-            <p>Experience the ultimate car racing game! High-speed action, realistic physics, and stunning graphics.</p>
-            <button class="play-btn" onclick="openGame('', 'https://games.cdn.famobi.com/html5games/e/extreme-car-racing/v030/?fg_domain=play.famobi.com&fg_aid=A1000-1&fg_uid=3e4be0b4-db22-4988-b6dc-b2aef2e1eb33&fg_pid=4638e320-4444-4514-81c7-d80f8c6e6b8c&fg_beat=709&original_ref=https%3A%2F%2Fhtml5.gamedistribution.com%2F')">
-                PLAY NOW <i class="fas fa-play"></i>
-            </button>
-        </div>
-        <div class="featured-image">
-            <img src="https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80" alt="Car Racing Game">
-        </div>
-    </section>
-
-    <!-- Games Grid -->
-    <h2 class="section-title" id="games">POPULAR GAMES</h2>
-    <div class="games-grid">
-        <!-- Game 1 -->
-        <div class="game-card">
-            <img src="https://pokiigame.com/images/jpg/sprinters-challenge.jpg" class="game-image" alt="Snake Game">
-            <div class="game-info">
-                <h3 class="game-title">Run Master</h3>
-                <p class="game-description">Classic run game with modern twists. Eat food, grow longer, and avoid collisions!</p>
-                <div class="game-meta">
-                    <span><i class="fas fa-gamepad"></i> Arcade</span>
-                    <span><i class="fas fa-heart"></i> 4.5/5</span>
-                </div>
-                <button class="play-btn" onclick="openGame('', 'https://pokiigame.com/games/sprinters-challenge/index.html')">
-                    PLAY NOW <i class="fas fa-play"></i>
-                </button>
-            </div>
-        </div>
-
-        <!-- Game 2 -->
-        <div class="game-card">
-            <img src="https://pokiigame.com/images/jpg/speed-boat.jpg" class="game-image" alt="Puzzle Game">
-            <div class="game-info">
-                <h3 class="game-title">Boat Driving</h3>
-                <p class="game-description">Challenge your mind with this addictive puzzle game. Solve levels and beat high scores!</p>
-                <div class="game-meta">
-                    <span><i class="fas fa-puzzle-piece"></i> Puzzle</span>
-                    <span><i class="fas fa-heart"></i> 4.7/5</span>
-                </div>
-                <button class="play-btn" onclick="openGame('', 'https://pokiigame.com/games/speed-boat/index.html')">
-                    PLAY NOW <i class="fas fa-play"></i>
-                </button>
-            </div>
-        </div>
-
-        <!-- Game 3 -->
-        <div class="game-card">
-            <img src="https://pokiigame.com/images/jpg/car-parking-jam-3D.jpg" class="game-image" alt="Car Game">
-            <div class="game-info">
-                <h3 class="game-title">Car Parking</h3>
-                <p class="game-description">High-speed racing through city streets. Customize your car and beat the competition!</p>
-                <div class="game-meta">
-                    <span><i class="fas fa-car"></i> Racing</span>
-                    <span><i class="fas fa-heart"></i> 4.8/5</span>
-                </div>
-                <button class="play-btn" onclick="openGame('', 'https://pokiigame.com/games/car-parking-jam-3D/index.html')">
-                    PLAY NOW <i class="fas fa-play"></i>
-                </button>
-            </div>
-        </div>
-
-        <!-- Game 4 -->
-        <div class="game-card">
-            <img src="https://pokiigame.com/images/jpg/strike-bowling.jpg" class="game-image" alt="Basketball Game">
-            <div class="game-info">
-                <h3 class="game-title">Basketball Shootout</h3>
-                <p class="game-description">Test your shooting skills! Make as many baskets as possible in this exciting sports game.</p>
-                <div class="game-meta">
-                    <span><i class="fas fa-basketball-ball"></i> Sports</span>
-                    <span><i class="fas fa-heart"></i> 4.6/5</span>
-                </div>
-                <button class="play-btn" onclick="openGame('', 'https://pokiigame.com/games/strike-bowling/index.html')">
-                    PLAY NOW <i class="fas fa-play"></i>
-                </button>
-            </div>
-        </div>
-
-        <!-- Game 5 -->
-        <div class="game-card">
-            <img src="https://pokiigame.com/images/jpg/sly-crab.jpg" class="game-image" alt="Girl Game">
-            <div class="game-info">
-                <h3 class="game-title">Fashion Designer</h3>
-                <p class="game-description">Create stunning fashion designs! Dress up models and showcase your style.</p>
-                <div class="game-meta">
-                    <span><i class="fas fa-heart"></i> Girls</span>
-                    <span><i class="fas fa-star"></i> 4.9/5</span>
-                </div>
-                <button class="play-btn" onclick="openGame('', 'https://pokiigame.com/games/sly-crab/index.html')">
-                    PLAY NOW <i class="fas fa-play"></i>
-                </button>
-            </div>
-        </div>
-
-        <!-- Game 6 -->
-        <div class="game-card">
-            <img src="https://pokiigame.com/images/jpg/grocery-grove.jpg" class="game-image" alt="Multiplayer Game">
-            <div class="game-info">
-                <h3 class="game-title">Battle Royale</h3>
-                <p class="game-description">Play with friends in this exciting multiplayer battle game. Be the last one standing!</p>
-                <div class="game-meta">
-                    <span><i class="fas fa-users"></i> Multiplayer</span>
-                    <span><i class="fas fa-heart"></i> 4.8/5</span>
-                </div>
-                <button class="play-btn" onclick="openGame('', 'https://pokiigame.com/games/grocery-grove/index.html')">
-                    PLAY NOW <i class="fas fa-play"></i>
-                </button>
-            </div>
-        </div>
-
-
-        <div class="game-card">
-            <img src="https://pokiigame.com/images/jpg/grocery-grove.jpg" class="game-image" alt="Multiplayer Game">
-            <div class="game-info">
-                <h3 class="game-title">NinJa Figter</h3>
-                <p class="game-description">Play with friends in this exciting multiplayer battle game. Be the last one standing!</p>
-                <div class="game-meta">
-                    <span><i class="fas fa-users"></i> Multiplayer</span>
-                    <span><i class="fas fa-heart"></i> 4.8/5</span>
-                </div>
-                <button class="play-btn" onclick="openGame('', 'https://pokiigame.com/games/fight-ninja/index.html')">
-                    PLAY NOW <i class="fas fa-play"></i>
-                </button>
-            </div>
-        </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CroomX Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+    <script type="module" src="js/firebase-init.js"></script>
+  </head>
+  <body>
+    <!-- Login -->
+    <div id="login-screen" class="screen-center">
+      <div class="auth-card">
+        <div class="logo">⚙️</div>
+        <h1>CroomX Admin</h1>
+        <p>Sign in with your authorized Google admin account.</p>
+        <button id="btn-google-signin" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24">
+            <path
+              fill="#fff"
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+            />
+            <path
+              fill="#fff"
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            />
+            <path
+              fill="#fff"
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+            />
+            <path
+              fill="#fff"
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+            />
+          </svg>
+          Sign in with Google
+        </button>
+      </div>
     </div>
 
-    <!-- Game Modal -->
-    <div id="gameModal" class="game-modal">
-        <div class="modal-content">
-            <span class="close-modal" onclick="closeModal()">&times;</span>
-            <h2 class="modal-game-title" id="modalTitle">Game Title</h2>
-            <iframe id="gameFrame" class="modal-game-frame" src="" allowfullscreen></iframe>
-            <div style="text-align: center; margin-top: 0px;">
-                <button class="play-btn" onclick="closeModal()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
+    <!-- Access denied -->
+    <div id="denied-screen" class="screen-center hidden">
+      <div class="auth-card">
+        <h1>Access denied</h1>
+        <div class="alert alert-error">
+          <strong id="denied-email"></strong> is not on the admin allowlist.
         </div>
+        <button id="btn-signout-denied" class="btn btn-outline">Sign out</button>
+      </div>
     </div>
 
-    <!-- Footer -->
-    <footer>
-        <div class="footer-content">
-            <div class="footer-section">
-                <h3>POKI GAMES</h3>
-                <p>Best free online games platform. Play thousands of games without download!</p>
-                <p style="margin-top: 15px;">
-                    <i class="fas fa-envelope"></i> contact@pokigames.com<br>
-                    <i class="fas fa-globe"></i> www.pokigames.com
-                </p>
+    <!-- Main app -->
+    <div id="app-shell" class="hidden">
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-brand">CroomX Admin</div>
+        <nav class="nav">
+          <a href="#/dashboard" data-page="dashboard"><span class="icon">📊</span> Dashboard</a>
+          <a href="#/users" data-page="users"><span class="icon">👥</span> Users</a>
+          <a href="#/tasks" data-page="tasks"><span class="icon">✅</span> Daily Tasks</a>
+          <a href="#/matches" data-page="matches"><span class="icon">🎮</span> Matches</a>
+          <a href="#/ai" data-page="ai"><span class="icon">🤖</span> AI Control</a>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="user-info">
+            <img id="user-avatar" src="" alt="" />
+            <div>
+              <div id="user-name">Admin</div>
+              <div id="user-email" class="email"></div>
             </div>
-            <div class="footer-section">
-                <h3>Quick Links</h3>
-                <ul class="footer-links">
-                    <li><a href="#home">Home</a></li>
-                    <li><a href="#categories">Categories</a></li>
-                    <li><a href="#trending">Trending Games</a></li>
-                    <li><a href="#new">New Games</a></li>
-                    <li><a href="#multiplayer">Multiplayer</a></li>
-                </ul>
-            </div>
-            <div class="footer-section">
-                <h3>Popular Categories</h3>
-                <ul class="footer-links">
-                    <li><a href="#" onclick="filterCategory('action')">Action Games</a></li>
-                    <li><a href="#" onclick="filterCategory('puzzle')">Puzzle Games</a></li>
-                    <li><a href="#" onclick="filterCategory('car')">Car Games</a></li>
-                    <li><a href="#" onclick="filterCategory('sports')">Sports Games</a></li>
-                    <li><a href="#" onclick="filterCategory('girls')">Girls Games</a></li>
-                </ul>
-            </div>
-            <div class="footer-section">
-                <h3>Connect With Us</h3>
-                <div style="font-size: 1.5rem; margin-top: 15px;">
-                    <a href="#" style="color: white; margin-right: 15px;"><i class="fab fa-facebook"></i></a>
-                    <a href="#" style="color: white; margin-right: 15px;"><i class="fab fa-twitter"></i></a>
-                    <a href="#" style="color: white; margin-right: 15px;"><i class="fab fa-instagram"></i></a>
-                    <a href="#" style="color: white;"><i class="fab fa-youtube"></i></a>
-                </div>
-                <p style="margin-top: 20px; color: #aaa;">
-                    <i class="fas fa-shield-alt"></i> Safe & Secure Gaming
-                </p>
-            </div>
+          </div>
+          <button id="btn-signout" class="btn btn-outline btn-sm" style="width: 100%">
+            Sign out
+          </button>
         </div>
-        <div class="copyright">
-            <p>&copy; 2026 POKII GAMES. ALL RIGHTS RESERVED. | FREE ONLINE GAMES | PLAY WITHOUT DOWNLOAD</p>
-            <p style="margin-top: 10px; font-size: 0.9rem;">
-                <a href="#" style="color: #aaa; margin: 0 10px;">Privacy Policy</a> | 
-                <a href="#" style="color: #aaa; margin: 0 10px;">Terms of Service</a> | 
-                <a href="#" style="color: #aaa; margin: 0 10px;">Contact Us</a>
-            </p>
-        </div>
-    </footer>
+      </aside>
 
-    <script>
-        // Game data
-        const games = [
-            { 
-                title: "Snake Master", 
-                category: "arcade", 
-                url: "https://snake-game-by-garvit.netlify.app/",
-                description: "Classic snake game with modern twists"
-            },
-            { 
-                title: "Brain Puzzle", 
-                category: "puzzle", 
-                url: "https://poki.com/en/g/jigsaw-puzzle",
-                description: "Challenge your mind with puzzles"
-            },
-            { 
-                title: "Street Racer", 
-                category: "car", 
-                url: "https://games.cdn.famobi.com/html5games/c/car-rush-3d/v010/",
-                description: "High-speed racing action"
-            },
-            { 
-                title: "Basketball Shootout", 
-                category: "sports", 
-                url: "https://poki.com/en/g/basketball-stars",
-                description: "Test your shooting skills"
-            },
-            { 
-                title: "Fashion Designer", 
-                category: "girls", 
-                url: "https://poki.com/en/g/girls-hair-salon",
-                description: "Create stunning fashion designs"
-            },
-            { 
-                title: "Battle Royale", 
-                category: "multiplayer", 
-                url: "https://poki.com/en/g/slitherio",
-                description: "Exciting multiplayer battle"
-            }
-        ];
+      <div class="main">
+        <header class="topbar">
+          <button id="menu-btn" class="btn btn-outline btn-sm">☰</button>
+          <strong>CroomX Admin</strong>
+        </header>
+        <div id="page-content" class="content"></div>
+      </div>
+    </div>
 
-        // Open game in modal
-        function openGame(title, url) {
-            document.getElementById('modalTitle').textContent = title;
-            document.getElementById('gameFrame').src = url;
-            document.getElementById('gameModal').style.display = 'flex';
-            document.body.style.overflow = 'hidden';
-            
-            // Track game play (for analytics)
-            console.log(`Playing: ${title}`);
-        }
-
-        // Close modal
-        function closeModal() {
-            document.getElementById('gameModal').style.display = 'none';
-            document.getElementById('gameFrame').src = '';
-            document.body.style.overflow = 'auto';
-        }
-
-        // Filter games by category
-        function filterCategory(category) {
-            alert(`Showing ${category} games! In a full version, this would filter the game list.`);
-            // In a full implementation, this would filter the games grid
-        }
-
-        // Search games
-        function searchGames() {
-            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            if (searchTerm) {
-                alert(`Searching for: ${searchTerm}`);
-                // In a full implementation, this would search through games
-            }
-        }
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-            if (e.key === '/' && e.target.tagName !== 'INPUT') {
-                e.preventDefault();
-                document.getElementById('searchInput').focus();
-            }
-        });
-
-        // Smooth scrolling for anchor links
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function (e) {
-                e.preventDefault();
-                const targetId = this.getAttribute('href');
-                if(targetId !== '#') {
-                    const targetElement = document.querySelector(targetId);
-                    if(targetElement) {
-                        window.scrollTo({
-                            top: targetElement.offsetTop - 80,
-                            behavior: 'smooth'
-                        });
-                    }
-                }
-            });
-        });
-
-        // Initialize
-        console.log("Poki Games Website Loaded!");
-        console.log("Play free online games without download!");
-    </script>
-</body>
+    <script type="module" src="js/app.js"></script>
+  </body>
 </html>
