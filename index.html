@@ -664,10 +664,78 @@ tr.clickable {
   margin-bottom: 1.5rem;
 }
 
+.chart-panel.maximized .chart-panel-body svg {
+  min-height: 420px;
+}
+
+.chart-panel.minimized .chart-panel-body {
+  display: none;
+}
+
+.chart-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.chart-panel.minimized .chart-panel-head {
+  margin-bottom: 0;
+}
+
 .chart-panel h3 {
   font-size: 1rem;
   font-weight: 600;
-  margin-bottom: 1rem;
+  margin: 0;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.chart-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+.chart-btn:hover {
+  background: var(--bg-hover);
+}
+
+.chart-panel:fullscreen {
+  padding: 2rem;
+  overflow: auto;
+  background: var(--bg-card);
+}
+
+.chart-panel:fullscreen .chart-panel-body svg {
+  min-height: 70vh;
+}
+
+.charts-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.charts-row .chart-panel {
+  margin-bottom: 0;
+}
+
+.chart-panel.maximized {
+  grid-column: 1 / -1;
 }
 
 .chart-wrap {
@@ -693,16 +761,16 @@ tr.clickable {
   font-size: 11px;
 }
 
+.chart-bar-value {
+  fill: #dc2626;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .chart-bar-label {
   fill: #1e293b;
   font-size: 11px;
   font-weight: 600;
-}
-
-.chart-value {
-  fill: #dc2626;
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .season-form {
@@ -842,6 +910,7 @@ let rtdb;
 let usersCol;
 let adminsDoc;
 let seasonConfigDoc;
+let dailyTasksMetaDoc;
 
 async function ensureDb() {
   if (!dbReady) {
@@ -855,16 +924,16 @@ async function ensureDb() {
       usersCol = collection(firestore, 'users');
       adminsDoc = doc(firestore, 'admins', 'admin_emails');
       seasonConfigDoc = doc(firestore, 'app_config', 'leaderboard');
+      dailyTasksMetaDoc = doc(firestore, 'app_config', 'daily_tasks');
     })();
   }
   await dbReady;
-  return { firestore, rtdb, usersCol, adminsDoc, seasonConfigDoc };
+  return { firestore, rtdb, usersCol, adminsDoc, seasonConfigDoc, dailyTasksMetaDoc };
 }
 
 // ── Config ──
 const DEFAULT_ADMIN_EMAIL = 'pal982565@gmail.com';
 const ACTIVE_NOW_MS = 5 * 60 * 1000;
-const ACTIVE_TODAY_MS = 24 * 60 * 60 * 1000;
 const AI_GUEST_PREFIX = 'ai_opponent_';
 
 const TASK_CATALOG = [
@@ -889,7 +958,16 @@ function taskTitle(id) {
 
 // ── Utils ──
 function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function isLoggedInToday(loginRef) {
+  if (!loginRef) return false;
+  return loginRef >= startOfToday();
 }
 
 function startOfToday() {
@@ -1086,7 +1164,6 @@ async function getSeasonStats(seasonId) {
   let players = 0;
   let totalScore = 0;
   let activeToday = 0;
-  const now = Date.now();
 
   snap.docs.forEach((d) => {
     const user = userFromMap(d.id, d.data());
@@ -1095,14 +1172,120 @@ async function getSeasonStats(seasonId) {
     players++;
     totalScore += user.score;
     const loginRef = user.lastLogin > 0 ? user.lastLogin : user.lastUpdated;
-    if (now - loginRef <= ACTIVE_TODAY_MS) activeToday++;
+    if (isLoggedInToday(loginRef)) activeToday++;
   });
 
   return { players, totalScore, activeToday, avgScore: players ? Math.round(totalScore / players) : 0 };
 }
 
+async function getSeasonComparison() {
+  const config = await getSeasonConfig();
+  const oldNum = Math.max(1, config.seasonNumber - 1);
+  const oldId = `s${oldNum}`;
+  const newId = config.seasonId;
+
+  await ensureDb();
+  const { getDocs } = await fs();
+  const adminEmails = await resolveAdminEmails();
+  const snap = await getDocs(usersCol);
+
+  let oldCount = 0;
+  let newCount = 0;
+
+  snap.docs.forEach((d) => {
+    const user = userFromMap(d.id, d.data());
+    if (isAdminUser(user, adminEmails)) return;
+    if (userMatchesSeason(d.data(), oldId)) oldCount++;
+    if (userMatchesSeason(d.data(), newId)) newCount++;
+  });
+
+  return {
+    oldSeason: { id: oldId, label: `Season ${oldNum}`, count: oldCount },
+    newSeason: { id: newId, label: config.seasonLabel, count: newCount },
+  };
+}
+
+function buildEmptyTodayTasks() {
+  const now = Date.now();
+  return Object.fromEntries(
+    ALL_TASK_IDS.map((id) => [
+      String(id),
+      {
+        completed: false,
+        completedAt: 0,
+        resetAt: now,
+        streakDay: 1,
+        lastClaimEpochDay: -1,
+      },
+    ]),
+  );
+}
+
+async function getDailyResetMeta() {
+  await ensureDb();
+  const { getDoc } = await fs();
+  const snap = await getDoc(dailyTasksMetaDoc);
+  if (!snap.exists()) return { lastResetDate: '' };
+  return { lastResetDate: snap.data().lastResetDate || '' };
+}
+
+async function saveDailyResetMeta(date) {
+  await ensureDb();
+  const { setDoc } = await fs();
+  await setDoc(
+    dailyTasksMetaDoc,
+    { lastResetDate: date, lastResetAt: Date.now() },
+    { merge: true },
+  );
+}
+
+async function resetAllDailyTasks() {
+  await ensureDb();
+  const { getDocs, writeBatch, doc } = await fs();
+  const adminEmails = await resolveAdminEmails();
+  const snap = await getDocs(usersCol);
+  const today = todayKey();
+  const emptyTasks = buildEmptyTodayTasks();
+  const payload = {
+    dailyTaskDate: today,
+    dailyTasksCompleted: [],
+    dailyTaskCount: 0,
+    dailyTaskAllComplete: false,
+    dailyTaskUpdatedAt: Date.now(),
+    todayTasks: emptyTasks,
+  };
+
+  let batch = writeBatch(firestore);
+  let ops = 0;
+  let resetCount = 0;
+
+  for (const d of snap.docs) {
+    const user = userFromMap(d.id, d.data());
+    if (isAdminUser(user, adminEmails)) continue;
+    batch.update(doc(firestore, 'users', d.id), payload);
+    ops++;
+    resetCount++;
+    if (ops >= 400) {
+      await batch.commit();
+      batch = writeBatch(firestore);
+      ops = 0;
+    }
+  }
+  if (ops > 0) await batch.commit();
+  await saveDailyResetMeta(today);
+  return resetCount;
+}
+
+async function maybeAutoResetDailyTasks() {
+  const today = todayKey();
+  const meta = await getDailyResetMeta();
+  if (meta.lastResetDate === today) return null;
+  return resetAllDailyTasks();
+}
+
 async function getDashboardStats() {
   const now = Date.now();
+  const dayStart = startOfToday();
   const { getDocs } = await fs();
   const [adminEmails, snapshot] = await Promise.all([resolveAdminEmails(), getDocs(usersCol)]);
 
@@ -1110,18 +1293,21 @@ async function getDashboardStats() {
   const today = [];
   const inactive = [];
   let total = 0;
+  let loginTodayTotal = 0;
 
   snapshot.docs.forEach((d) => {
     const user = userFromMap(d.id, d.data());
     if (isAdminUser(user, adminEmails)) return;
     total++;
+    const loginRef = user.lastLogin > 0 ? user.lastLogin : user.lastUpdated;
+    const loggedToday = isLoggedInToday(loginRef);
+
     if (isBanned(user)) {
       inactive.push(user);
       return;
     }
-    const loginRef = user.lastLogin > 0 ? user.lastLogin : user.lastUpdated;
     const onlineNow = now - user.lastUpdated <= ACTIVE_NOW_MS;
-    const loggedToday = now - loginRef <= ACTIVE_TODAY_MS;
+    if (loggedToday) loginTodayTotal++;
     if (onlineNow) online.push(user);
     else if (loggedToday) today.push(user);
     else inactive.push(user);
@@ -1135,11 +1321,13 @@ async function getDashboardStats() {
   return {
     totalUsers: total,
     activeNow: online.length,
-    activeToday: online.length + today.length,
+    activeToday: loginTodayTotal,
     inactiveUsers: inactive.length,
+    loginTodayOnly: today.length,
     online,
     today,
     inactive,
+    dayStart,
     generatedAt: now,
   };
 }
@@ -1318,10 +1506,12 @@ async function getAiRecords() {
 
 const CHART_COLORS = ['#22c55e', '#3b82f6', '#eab308', '#ec4899', '#a855f7', '#f97316', '#06b6d4', '#ef4444'];
 
-function renderBarChart(labels, values, { yLabel = 'Score', xLabel = 'Top players' } = {}) {
+function renderBarChartSvg(labels, values, { yLabel = 'Count', xLabel = 'Category', markerId } = {}) {
   if (!labels.length) {
     return '<p class="empty">No chart data yet.</p>';
   }
+
+  const arrowId = markerId || `arrow-${Math.random().toString(36).slice(2, 9)}`;
 
   const maxVal = Math.max(...values, 1);
   const yMax = Math.max(10, Math.ceil(maxVal / 5) * 5);
@@ -1329,13 +1519,13 @@ function renderBarChart(labels, values, { yLabel = 'Score', xLabel = 'Top player
   const ticks = [];
   for (let v = 0; v <= yMax; v += tickStep) ticks.push(v);
 
-  const barW = 52;
-  const gap = 28;
+  const barW = 56;
+  const gap = 32;
   const chartH = 260;
   const padL = 56;
   const padR = 28;
   const padT = 28;
-  const padB = 72;
+  const padB = 88;
   const innerW = labels.length * barW + (labels.length - 1) * gap;
   const width = padL + innerW + padR;
   const height = padT + chartH + padB;
@@ -1361,12 +1551,12 @@ function renderBarChart(labels, values, { yLabel = 'Score', xLabel = 'Top player
       const y = padT + chartH - h;
       const color = CHART_COLORS[i % CHART_COLORS.length];
       const guideY = y;
-      const short = label.length > 10 ? `${label.slice(0, 9)}…` : label;
+      const short = label.length > 12 ? `${label.slice(0, 11)}…` : label;
       return `
         <rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${color}" rx="4"/>
-        <line x1="${padL - 4}" y1="${guideY}" x2="${x + barW / 2}" y2="${guideY}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4 3"/>
-        <text class="chart-value" x="${padL - 8}" y="${guideY + 4}" text-anchor="end">${val}</text>
-        <text class="chart-bar-label" x="${x + barW / 2}" y="${padT + chartH + 22}" text-anchor="middle">${esc(short)}</text>
+        <line x1="${padL - 4}" y1="${guideY}" x2="${x + barW / 2}" y2="${guideY}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#${arrowId})"/>
+        <text class="chart-bar-value" x="${x + barW / 2}" y="${padT + chartH + 18}" text-anchor="middle">${val}</text>
+        <text class="chart-bar-label" x="${x + barW / 2}" y="${padT + chartH + 38}" text-anchor="middle">${esc(short)}</text>
       `;
     })
     .join('');
@@ -1374,13 +1564,64 @@ function renderBarChart(labels, values, { yLabel = 'Score', xLabel = 'Top player
   return `
     <div class="chart-wrap">
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(yLabel)} bar chart">
+        <defs>
+          <marker id="${arrowId}" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#dc2626"/>
+          </marker>
+        </defs>
         ${gridLines}
         ${yLabels}
         ${bars}
         <text class="chart-axis-label" x="16" y="${padT + chartH / 2}" transform="rotate(-90 16 ${padT + chartH / 2})" text-anchor="middle">${esc(yLabel)}</text>
-        <text class="chart-axis-label" x="${padL + innerW / 2}" y="${height - 12}" text-anchor="middle">${esc(xLabel)}</text>
+        <text class="chart-axis-label" x="${padL + innerW / 2}" y="${height - 8}" text-anchor="middle">${esc(xLabel)}</text>
       </svg>
     </div>`;
+}
+
+function renderChartPanel(title, labels, values, options = {}) {
+  const id = options.id || `chart-${Math.random().toString(36).slice(2, 9)}`;
+  const markerId = `arrow-${id}`;
+  return `
+    <div class="chart-panel" id="${id}" data-chart-panel>
+      <div class="chart-panel-head">
+        <h3>${esc(title)}</h3>
+        <div class="chart-controls">
+          <button type="button" class="chart-btn" data-action="minimize" title="Minimize">−</button>
+          <button type="button" class="chart-btn" data-action="maximize" title="Maximize">□</button>
+          <button type="button" class="chart-btn" data-action="fullscreen" title="Full screen">⛶</button>
+        </div>
+      </div>
+      <div class="chart-panel-body">
+        ${renderBarChartSvg(labels, values, { ...options, markerId })}
+      </div>
+    </div>`;
+}
+
+function bindChartControls(root = document) {
+  root.querySelectorAll('[data-chart-panel]').forEach((panel) => {
+    panel.querySelectorAll('.chart-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const action = btn.dataset.action;
+        if (action === 'minimize') {
+          panel.classList.toggle('minimized');
+          panel.classList.remove('maximized');
+        } else if (action === 'maximize') {
+          panel.classList.toggle('maximized');
+          panel.classList.remove('minimized');
+        } else if (action === 'fullscreen') {
+          if (document.fullscreenElement === panel) {
+            void document.exitFullscreen();
+          } else {
+            void panel.requestFullscreen?.();
+          }
+        }
+      };
+    });
+  });
+}
+
+function renderBarChart(labels, values, options = {}) {
+  return renderChartPanel(options.title || 'Chart', labels, values, options);
 }
 
 // ── App ──
@@ -1456,28 +1697,83 @@ function userListHtml(users, empty) {
 }
 
 async function renderDashboard() {
-  const stats = await getDashboardStats();
+  const [stats, seasonCmp, resetMeta] = await Promise.all([
+    getDashboardStats(),
+    getSeasonComparison(),
+    getDailyResetMeta(),
+  ]);
+
+  let resetNotice = '';
+  const today = todayKey();
+  if (resetMeta.lastResetDate !== today) {
+    try {
+      const count = await maybeAutoResetDailyTasks();
+      if (count !== null) {
+        resetNotice = `<div class="alert alert-info">Daily tasks auto-reset for ${count} users (new day after 12:00 AM).</div>`;
+      }
+    } catch (e) {
+      resetNotice = `<div class="alert alert-error">Daily task auto-reset failed: ${esc(e.message)}</div>`;
+    }
+  }
+
+  const statusLabels = ['Online', 'Login Today', 'Inactive'];
+  const statusValues = [stats.activeNow, stats.activeToday, stats.inactiveUsers];
+  const seasonLabels = [seasonCmp.oldSeason.label, seasonCmp.newSeason.label];
+  const seasonValues = [seasonCmp.oldSeason.count, seasonCmp.newSeason.count];
+
   pageContent.innerHTML = `
     <div class="page-header">
       <div>
         <h2>Dashboard</h2>
-        <p class="subtitle">Updated ${fmtDate(stats.generatedAt)}</p>
+        <p class="subtitle">Updated ${fmtDate(stats.generatedAt)} • Login today resets at 12:00 AM</p>
       </div>
       <div class="page-actions">
+        <button class="btn btn-outline btn-sm" id="dash-reset-tasks">Reset daily tasks</button>
         <button class="btn btn-outline btn-sm" onclick="location.reload()">↻ Refresh</button>
       </div>
     </div>
+    ${resetNotice}
     <div class="stats-grid">
       <div class="stat-card"><div class="label">Total users</div><div class="value">${stats.totalUsers}</div></div>
       <div class="stat-card"><div class="label">Online now (5 min)</div><div class="value green">${stats.activeNow}</div></div>
-      <div class="stat-card"><div class="label">Active today</div><div class="value blue">${stats.activeToday}</div></div>
+      <div class="stat-card"><div class="label">Logged in today</div><div class="value blue">${stats.activeToday}</div></div>
       <div class="stat-card"><div class="label">Inactive / banned</div><div class="value">${stats.inactiveUsers}</div></div>
+    </div>
+    <div class="charts-row">
+      ${renderChartPanel('User status', statusLabels, statusValues, {
+        id: 'chart-user-status',
+        yLabel: 'Number of users',
+        xLabel: 'User status',
+      })}
+      ${renderChartPanel('Old vs new season', seasonLabels, seasonValues, {
+        id: 'chart-season-compare',
+        yLabel: 'Number of users',
+        xLabel: 'Season',
+      })}
     </div>
     <div class="stats-grid">
       <div class="panel"><h3>Online now</h3>${userListHtml(stats.online, 'No users online.')}</div>
-      <div class="panel"><h3>Logged in today</h3>${userListHtml(stats.today, 'No users today.')}</div>
+      <div class="panel"><h3>Logged in today</h3>${userListHtml([...stats.online, ...stats.today], 'No users logged in today.')}</div>
       <div class="panel"><h3>Inactive / banned</h3>${userListHtml(stats.inactive, 'No inactive users.')}</div>
-    </div>`;
+    </div>
+    <p id="dash-msg" class="subtitle"></p>`;
+
+  bindChartControls(pageContent);
+
+  $('#dash-reset-tasks').onclick = async () => {
+    if (!confirm('Reset daily tasks for all users for today?')) return;
+    const btn = $('#dash-reset-tasks');
+    btn.disabled = true;
+    $('#dash-msg').textContent = 'Resetting daily tasks…';
+    try {
+      const count = await resetAllDailyTasks();
+      $('#dash-msg').textContent = `Daily tasks reset for ${count} users.`;
+    } catch (e) {
+      $('#dash-msg').textContent = e.message || 'Reset failed.';
+    } finally {
+      btn.disabled = false;
+    }
+  };
 }
 
 async function renderUsers() {
@@ -1632,6 +1928,19 @@ async function renderUserDetail(userId) {
 
 async function renderTasks() {
   let filter = 'all';
+  let tasksNotice = '';
+
+  try {
+    const meta = await getDailyResetMeta();
+    if (meta.lastResetDate !== todayKey()) {
+      const count = await maybeAutoResetDailyTasks();
+      if (count !== null) {
+        tasksNotice = `Daily tasks auto-reset for ${count} users (new day after 12:00 AM).`;
+      }
+    }
+  } catch {
+    // Non-blocking on tasks page.
+  }
 
   async function load() {
     let rows = await getDailyTasks();
@@ -1667,16 +1976,18 @@ async function renderTasks() {
 
   pageContent.innerHTML = `
     <div class="page-header">
-      <div><h2>Daily tasks</h2><p class="subtitle">Today's completion report</p></div>
+      <div><h2>Daily tasks</h2><p class="subtitle">Today's completion report • resets at 12:00 AM</p></div>
       <div class="page-actions">
         <div class="toggle-group" id="tasks-filter">
           <button data-f="all" class="active">All</button>
           <button data-f="done">Done (4+)</button>
           <button data-f="not">Not Done (&lt;5)</button>
         </div>
+        <button class="btn btn-outline btn-sm" id="tasks-reset">Reset daily tasks</button>
         <button class="btn btn-outline btn-sm" id="tasks-refresh">↻ Refresh</button>
       </div>
     </div>
+    <p id="tasks-msg" class="subtitle" style="margin-bottom:1rem">${esc(tasksNotice)}</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Player</th><th>Progress</th><th>Task date</th><th>Updated</th><th>Tasks</th></tr></thead>
@@ -1692,6 +2003,21 @@ async function renderTasks() {
     void load();
   };
   $('#tasks-refresh').onclick = () => void load();
+  $('#tasks-reset').onclick = async () => {
+    if (!confirm('Reset daily tasks for all users for today?')) return;
+    const btn = $('#tasks-reset');
+    btn.disabled = true;
+    $('#tasks-msg').textContent = 'Resetting…';
+    try {
+      const count = await resetAllDailyTasks();
+      $('#tasks-msg').textContent = `Reset complete for ${count} users.`;
+      await load();
+    } catch (e) {
+      $('#tasks-msg').textContent = e.message || 'Reset failed.';
+    } finally {
+      btn.disabled = false;
+    }
+  };
   await load();
 }
 
@@ -1789,13 +2115,16 @@ async function renderAi() {
 
 async function renderSeason() {
   const config = await getSeasonConfig();
-  const [leaderboard, stats] = await Promise.all([
+  const [leaderboard, stats, seasonCmp] = await Promise.all([
     getSeasonLeaderboard(config.seasonId, 10),
     getSeasonStats(config.seasonId),
+    getSeasonComparison(),
   ]);
 
   const chartLabels = leaderboard.slice(0, 5).map((u) => u.name || playerId(u));
   const chartValues = leaderboard.slice(0, 5).map((u) => u.score);
+  const seasonLabels = [seasonCmp.oldSeason.label, seasonCmp.newSeason.label];
+  const seasonValues = [seasonCmp.oldSeason.count, seasonCmp.newSeason.count];
 
   pageContent.innerHTML = `
     <div class="page-header">
@@ -1810,12 +2139,20 @@ async function renderSeason() {
     <div class="stats-grid">
       <div class="stat-card"><div class="label">Season number</div><div class="value blue">${config.seasonNumber}</div></div>
       <div class="stat-card"><div class="label">Players in season</div><div class="value">${stats.players}</div></div>
-      <div class="stat-card"><div class="label">Active today</div><div class="value green">${stats.activeToday}</div></div>
+      <div class="stat-card"><div class="label">Logged in today</div><div class="value green">${stats.activeToday}</div></div>
       <div class="stat-card"><div class="label">Average score</div><div class="value">${stats.avgScore}</div></div>
     </div>
-    <div class="chart-panel">
-      <h3>Top player scores — ${esc(config.seasonLabel)}</h3>
-      ${renderBarChart(chartLabels, chartValues, { yLabel: 'Score', xLabel: 'Top players' })}
+    <div class="charts-row">
+      ${renderChartPanel(`Top scores — ${config.seasonLabel}`, chartLabels, chartValues, {
+        id: 'chart-season-scores',
+        yLabel: 'Score',
+        xLabel: 'Top players',
+      })}
+      ${renderChartPanel('Old vs new season users', seasonLabels, seasonValues, {
+        id: 'chart-season-users',
+        yLabel: 'Number of users',
+        xLabel: 'Season',
+      })}
     </div>
     <div class="panel">
       <h3>Season config (Firestore: app_config / leaderboard)</h3>
@@ -1863,6 +2200,7 @@ async function renderSeason() {
       </table>
     </div>`;
 
+  bindChartControls(pageContent);
   const msg = $('#season-msg');
 
   $('#season-refresh').onclick = () => void renderSeason();
