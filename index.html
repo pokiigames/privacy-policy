@@ -269,6 +269,12 @@ textarea {
 .content {
   padding: 1.5rem 2rem 2rem;
   max-width: 1400px;
+  transition: opacity 0.12s ease;
+}
+
+.content.is-navigating {
+  opacity: 0.72;
+  pointer-events: none;
 }
 
 .page-header {
@@ -1868,31 +1874,77 @@ function setActiveNav() {
 }
 
 function navigate(page, param) {
+  pauseAutoRefresh(2500);
   location.hash = param ? `#/${page}/${param}` : `#/${page}`;
+}
+
+const REFRESH_INTERVAL_MS = 2500;
+let currentRouteKey = '';
+let routeBusy = false;
+let routeGeneration = 0;
+let pauseRefreshUntil = 0;
+let lastHash = '';
+
+function routeKey() {
+  return (location.hash.slice(2) || 'dashboard').split('?')[0];
+}
+
+function isCurrentRoute(page, param) {
+  const key = routeKey();
+  return param ? key === `${page}/${param}` : key === page;
+}
+
+function pauseAutoRefresh(ms = 2500) {
+  pauseRefreshUntil = Date.now() + ms;
 }
 
 async function route(options = {}) {
   const soft = options.soft === true;
-  const parts = (location.hash.slice(2) || 'dashboard').split('/');
+  const key = routeKey();
+  const parts = key.split('/');
   const page = parts[0];
   const param = parts[1];
   const fn = routes[page] || routes.dashboard;
 
-  if (!soft) {
+  if (soft) {
+    if (Date.now() < pauseRefreshUntil || routeBusy || document.hidden) return;
+    if (page === 'user-detail') return;
+    if (!['dashboard', 'users', 'season', 'matches', 'ai', 'tasks'].includes(page)) return;
+  } else {
+    pauseAutoRefresh(2000);
+    if (currentRouteKey === key && pageContent.querySelector('.page-header') && !routeBusy) {
+      setActiveNav();
+      return;
+    }
+    currentRouteKey = key;
+    routeGeneration += 1;
+    const myGen = routeGeneration;
     setActiveNav();
-    pageContent.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-  } else if (page === 'user-detail') {
-    return;
-  } else if (soft && !['dashboard', 'users', 'season', 'matches', 'ai'].includes(page)) {
+    pageContent.classList.add('is-navigating');
+    routeBusy = true;
+    try {
+      await fn(param, { soft });
+      if (myGen !== routeGeneration) return;
+    } catch (e) {
+      if (myGen !== routeGeneration) return;
+      pageContent.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+    } finally {
+      if (myGen === routeGeneration) {
+        routeBusy = false;
+        pageContent.classList.remove('is-navigating');
+      }
+    }
     return;
   }
 
+  routeBusy = true;
+  const softGen = routeGeneration;
   try {
     await fn(param, { soft });
   } catch (e) {
-    if (!soft) {
-      pageContent.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
-    }
+    // Soft refresh errors are non-blocking.
+  } finally {
+    if (softGen === routeGeneration) routeBusy = false;
   }
 }
 
@@ -1914,9 +1966,9 @@ function stopAdminAutoRefresh() {
 function startAdminAutoRefresh() {
   stopAdminAutoRefresh();
   adminRefreshTimer = setInterval(() => {
-    if (!isAdmin || document.hidden) return;
+    if (!isAdmin || document.hidden || Date.now() < pauseRefreshUntil || routeBusy) return;
     void route({ soft: true });
-  }, 100);
+  }, REFRESH_INTERVAL_MS);
 }
 
 function chartFingerprint(labels, values) {
@@ -2041,6 +2093,8 @@ async function renderDashboard(_param, options = {}) {
   const statusLabelsInit = statusLabels;
   const statusValuesInit = statusValues;
 
+  if (!isCurrentRoute('dashboard')) return;
+
   pageContent.innerHTML = `
     <div class="page-header">
       <div>
@@ -2085,6 +2139,7 @@ async function renderDashboard(_param, options = {}) {
   bindChartControls(pageContent);
 
   $('#dash-reset-tasks').onclick = async () => {
+    pauseAutoRefresh(3000);
     if (!confirm('Reset daily tasks for all users for today?')) return;
     const btn = $('#dash-reset-tasks');
     btn.disabled = true;
@@ -2110,6 +2165,7 @@ async function renderUsers(_param, options = {}) {
       tab: usersPageState?.tab || 'all',
       query: usersPageState?.query || '',
       selectedSeasonId: usersPageState?.selectedSeasonId || config.seasonId.toLowerCase(),
+      tableKey: '',
     };
   }
 
@@ -2181,16 +2237,14 @@ async function renderUsers(_param, options = {}) {
       </tr>`,
             )
             .join('');
-
-    document.querySelectorAll('#users-table-body tr[data-id]').forEach((row) => {
-      row.onclick = () => navigate('user-detail', row.dataset.id);
-    });
   }
 
   if (soft && $('#users-table-body')) {
     renderUsersTableBody();
     return;
   }
+
+  if (!isCurrentRoute('users')) return;
 
   pageContent.innerHTML = `
     <div class="page-header">
@@ -2232,33 +2286,54 @@ async function renderUsers(_param, options = {}) {
   $('#users-tab').onclick = (e) => {
     const btn = e.target.closest('button[data-tab]');
     if (!btn) return;
+    pauseAutoRefresh(1500);
     usersPageState.tab = btn.dataset.tab;
+    usersPageState.tableKey = '';
     document.querySelectorAll('#users-tab button').forEach((b) => b.classList.toggle('active', b === btn));
     renderUsersTableBody();
   };
   $('#users-search').oninput = (e) => {
     usersPageState.query = e.target.value;
+    usersPageState.tableKey = '';
     renderUsersTableBody();
   };
-  $('#users-refresh').onclick = () => void renderUsers(null, { soft: false });
+  $('#users-refresh').onclick = () => {
+    pauseAutoRefresh(1500);
+    usersPageState.tableKey = '';
+    void renderUsers(null, { soft: false });
+  };
   $('#users-season-row').onclick = (e) => {
     const btn = e.target.closest('button[data-season-id]');
     if (!btn) return;
+    pauseAutoRefresh(1500);
     usersPageState.selectedSeasonId = btn.dataset.seasonId;
+    usersPageState.tableKey = '';
     renderUsersTableBody();
   };
 
   renderUsersTableBody();
 }
 
-async function renderUserDetail(userId) {
+async function renderUserDetail(userId, options = {}) {
+  const soft = options.soft === true;
+  if (soft) return;
+  if (!userId) {
+    navigate('users');
+    return;
+  }
+
+  const existing = pageContent.querySelector('#user-detail-root');
+  if (existing?.dataset.userId === userId) return;
+
   const user = await getUserById(userId);
+  if (!isCurrentRoute('user-detail', userId)) return;
   const banned = isBanned(user);
 
   pageContent.innerHTML = `
+    <div id="user-detail-root" data-user-id="${esc(userId)}">
     <div class="page-header">
       <div><h2>User detail</h2><p class="subtitle">${esc(playerId(user))}</p></div>
-      <button class="btn btn-outline btn-sm" onclick="history.back()">← Back</button>
+      <button class="btn btn-outline btn-sm" id="user-detail-back">← Back</button>
     </div>
     <div class="panel">
       <div class="user-detail-header">
@@ -2296,7 +2371,10 @@ async function renderUserDetail(userId) {
         <button class="btn btn-outline" onclick="navigate('users')">Cancel</button>
       </div>
       <div id="save-msg"></div>
+    </div>
     </div>`;
+
+  $('#user-detail-back').onclick = () => navigate('users');
 
   const banToggle = $('#f-ban');
   const banDaysWrap = $('#ban-days-wrap');
@@ -2329,8 +2407,11 @@ async function renderUserDetail(userId) {
   };
 }
 
-async function renderTasks() {
-  let filter = 'all';
+let tasksPageState = { filter: 'all' };
+
+async function renderTasks(_param, options = {}) {
+  const soft = options.soft === true;
+  let filter = tasksPageState.filter;
   let tasksNotice = '';
 
   try {
@@ -2377,14 +2458,21 @@ async function renderTasks() {
             .join('');
   }
 
+  if (soft && $('#tasks-body')) {
+    await load();
+    return;
+  }
+
+  if (!isCurrentRoute('tasks')) return;
+
   pageContent.innerHTML = `
     <div class="page-header">
       <div><h2>Daily tasks</h2><p class="subtitle">Today's completion report • resets at 12:00 AM</p></div>
       <div class="page-actions">
         <div class="toggle-group" id="tasks-filter">
-          <button data-f="all" class="active">All</button>
-          <button data-f="done">Done (4+)</button>
-          <button data-f="not">Not Done (&lt;5)</button>
+          <button data-f="all" class="${tasksPageState.filter === 'all' ? 'active' : ''}">All</button>
+          <button data-f="done" class="${tasksPageState.filter === 'done' ? 'active' : ''}">Done (4+)</button>
+          <button data-f="not" class="${tasksPageState.filter === 'not' ? 'active' : ''}">Not Done (&lt;5)</button>
         </div>
         <button class="btn btn-outline btn-sm" id="tasks-reset">Reset daily tasks</button>
         <button class="btn btn-outline btn-sm" id="tasks-refresh">↻ Refresh</button>
@@ -2401,11 +2489,16 @@ async function renderTasks() {
   $('#tasks-filter').onclick = (e) => {
     const btn = e.target.closest('button[data-f]');
     if (!btn) return;
+    pauseAutoRefresh(1500);
     filter = btn.dataset.f;
+    tasksPageState.filter = filter;
     document.querySelectorAll('#tasks-filter button').forEach((b) => b.classList.toggle('active', b === btn));
     void load();
   };
-  $('#tasks-refresh').onclick = () => void load();
+  $('#tasks-refresh').onclick = () => {
+    pauseAutoRefresh(1500);
+    void load();
+  };
   $('#tasks-reset').onclick = async () => {
     if (!confirm('Reset daily tasks for all users for today?')) return;
     const btn = $('#tasks-reset');
@@ -2481,6 +2574,8 @@ async function renderMatches(_param, options = {}) {
 
   matchesPageState = { aiOnly, rowKey: '' };
 
+  if (!isCurrentRoute('matches')) return;
+
   pageContent.innerHTML = `
     <div class="page-header">
       <div>
@@ -2507,12 +2602,16 @@ async function renderMatches(_param, options = {}) {
   $('#match-tab').onclick = (e) => {
     const btn = e.target.closest('button[data-ai]');
     if (!btn) return;
+    pauseAutoRefresh(1500);
     aiOnly = btn.dataset.ai === '1';
     matchesPageState.aiOnly = aiOnly;
     document.querySelectorAll('#match-tab button').forEach((b) => b.classList.toggle('active', b === btn));
     void load();
   };
-  $('#match-refresh').onclick = () => void load();
+  $('#match-refresh').onclick = () => {
+    pauseAutoRefresh(1500);
+    void load();
+  };
   $('#match-delete-all').onclick = async () => {
     const label = aiOnly ? 'AI match records' : 'human vs human match records';
     if (!confirm(`Delete ALL ${label} from Firebase? This cannot be undone.`)) return;
@@ -2592,6 +2691,8 @@ async function renderAi(_param, options = {}) {
 
   aiPageState = { rowKey: '' };
 
+  if (!isCurrentRoute('ai')) return;
+
   pageContent.innerHTML = `
     <div class="page-header">
       <div>
@@ -2611,7 +2712,10 @@ async function renderAi(_param, options = {}) {
       </table>
     </div>`;
 
-  $('#ai-refresh').onclick = () => void load();
+  $('#ai-refresh').onclick = () => {
+    pauseAutoRefresh(1500);
+    void load();
+  };
   $('#ai-delete-all').onclick = async () => {
     if (!confirm('Delete ALL AI rooms from Firebase? This removes waiting, in-match, and ended AI rooms.')) return;
     const btn = $('#ai-delete-all');
@@ -2725,6 +2829,8 @@ async function renderSeason(_param, options = {}) {
   function getSelectedSeason() {
     return seasonIndex.getSeason(selectedSeasonId) || seasonIndex.seasons[seasonIndex.seasons.length - 1];
   }
+
+  if (!isCurrentRoute('season')) return;
 
   pageContent.innerHTML = `
     <div class="page-header">
@@ -2855,13 +2961,17 @@ async function renderSeason(_param, options = {}) {
   $('#season-pick-row').onclick = (e) => {
     const btn = e.target.closest('button[data-season-id]');
     if (!btn) return;
+    pauseAutoRefresh(120000);
     selectedSeasonId = btn.dataset.seasonId;
     seasonPageState.selectedSeasonId = selectedSeasonId;
     updateSeasonPickButtons();
     renderScoresChart();
   };
 
-  $('#season-refresh').onclick = () => void renderSeason();
+  $('#season-refresh').onclick = () => {
+    pauseAutoRefresh(1500);
+    void renderSeason();
+  };
 
   $('#season-next').onclick = () => {
     const nextNum = Number($('#season-number').value || config.seasonNumber) + 1;
@@ -2960,17 +3070,31 @@ onAuthStateChanged(auth, async (user) => {
   if (user.photoURL) $('#user-avatar').src = user.photoURL;
 
   if (!location.hash || location.hash === '#') location.hash = '#/dashboard';
+  lastHash = location.hash;
   startAdminAutoRefresh();
   await route();
 });
 
 window.addEventListener('hashchange', () => {
-  if (isAdmin) void route();
+  if (!isAdmin) return;
+  const h = location.hash || '#/dashboard';
+  if (h === lastHash) return;
+  lastHash = h;
+  void route();
+});
+
+pageContent.addEventListener('click', (e) => {
+  const row = e.target.closest('#users-table-body tr[data-id]');
+  if (!row) return;
+  e.preventDefault();
+  pauseAutoRefresh(3000);
+  navigate('user-detail', row.dataset.id);
 });
 
 document.querySelectorAll('.nav a').forEach((a) => {
   a.onclick = (e) => {
     e.preventDefault();
+    pauseAutoRefresh(2000);
     navigate(a.dataset.page);
     sidebar.classList.remove('open');
   };
