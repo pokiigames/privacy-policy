@@ -796,6 +796,54 @@ tr.clickable {
   color: var(--text);
 }
 
+.chart-btn-text {
+  width: auto;
+  padding: 0 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.season-compare-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.season-compare-controls label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.season-compare-controls input,
+.season-compare-controls select {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.season-users-panel {
+  margin-top: 1rem;
+}
+
+.season-users-panel h4 {
+  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+}
+
+.season-tab-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -1178,30 +1226,46 @@ async function getSeasonStats(seasonId) {
   return { players, totalScore, activeToday, avgScore: players ? Math.round(totalScore / players) : 0 };
 }
 
-async function getSeasonComparison() {
-  const config = await getSeasonConfig();
-  const oldNum = Math.max(1, config.seasonNumber - 1);
-  const oldId = `s${oldNum}`;
-  const newId = config.seasonId;
-
+async function getAllSeasonUsers(seasonId) {
   await ensureDb();
   const { getDocs } = await fs();
   const adminEmails = await resolveAdminEmails();
   const snap = await getDocs(usersCol);
+  return snap.docs
+    .filter((d) => {
+      const user = userFromMap(d.id, d.data());
+      return !isAdminUser(user, adminEmails) && userMatchesSeason(d.data(), seasonId);
+    })
+    .map((d) => userFromMap(d.id, d.data()))
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+    .map((u, i) => ({ ...u, rank: i + 1 }));
+}
 
-  let oldCount = 0;
-  let newCount = 0;
+function seasonLabelForId(seasonId, fallbackLabel) {
+  if (fallbackLabel) return fallbackLabel;
+  const num = Number(String(seasonId).replace(/^s/i, ''));
+  return num ? `Season ${num}` : seasonId.toUpperCase();
+}
 
-  snap.docs.forEach((d) => {
-    const user = userFromMap(d.id, d.data());
-    if (isAdminUser(user, adminEmails)) return;
-    if (userMatchesSeason(d.data(), oldId)) oldCount++;
-    if (userMatchesSeason(d.data(), newId)) newCount++;
-  });
+async function getSeasonComparison(oldId, newId, oldLabel, newLabel) {
+  const [oldUsers, newUsers] = await Promise.all([
+    getAllSeasonUsers(oldId),
+    getAllSeasonUsers(newId),
+  ]);
 
   return {
-    oldSeason: { id: oldId, label: `Season ${oldNum}`, count: oldCount },
-    newSeason: { id: newId, label: config.seasonLabel, count: newCount },
+    oldSeason: {
+      id: oldId.toLowerCase(),
+      label: seasonLabelForId(oldId, oldLabel),
+      count: oldUsers.length,
+      users: oldUsers,
+    },
+    newSeason: {
+      id: newId.toLowerCase(),
+      label: seasonLabelForId(newId, newLabel),
+      count: newUsers.length,
+      users: newUsers,
+    },
   };
 }
 
@@ -1578,14 +1642,50 @@ function renderBarChartSvg(labels, values, { yLabel = 'Count', xLabel = 'Categor
     </div>`;
 }
 
+function renderSeasonUsersTable(users, emptyText) {
+  if (!users.length) {
+    return `<p class="empty">${esc(emptyText)}</p>`;
+  }
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th><th>Player</th><th>Email</th><th>Code</th>
+            <th class="text-right">Score</th><th class="text-right">Games</th><th class="text-right">Wins</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users
+            .map(
+              (u) => `<tr>
+            <td>#${u.rank}</td>
+            <td>${esc(u.name || 'Unnamed')}</td>
+            <td>${esc(u.email || '—')}</td>
+            <td>${esc(playerId(u))}</td>
+            <td class="text-right">${u.score}</td>
+            <td class="text-right">${u.gamesPlayed}</td>
+            <td class="text-right">${u.gamesWon}</td>
+          </tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function renderChartPanel(title, labels, values, options = {}) {
   const id = options.id || `chart-${Math.random().toString(36).slice(2, 9)}`;
   const markerId = `arrow-${id}`;
+  const extraBtn = options.extraButton
+    ? `<button type="button" class="chart-btn chart-btn-text" data-extra-btn="${esc(options.extraButtonId || '')}">${esc(options.extraButton)}</button>`
+    : '';
   return `
     <div class="chart-panel" id="${id}" data-chart-panel>
       <div class="chart-panel-head">
         <h3>${esc(title)}</h3>
         <div class="chart-controls">
+          ${extraBtn}
           <button type="button" class="chart-btn" data-action="minimize" title="Minimize">−</button>
           <button type="button" class="chart-btn" data-action="maximize" title="Maximize">□</button>
           <button type="button" class="chart-btn" data-action="fullscreen" title="Full screen">⛶</button>
@@ -1594,12 +1694,13 @@ function renderChartPanel(title, labels, values, options = {}) {
       <div class="chart-panel-body">
         ${renderBarChartSvg(labels, values, { ...options, markerId })}
       </div>
+      ${options.bodyBelow || ''}
     </div>`;
 }
 
 function bindChartControls(root = document) {
   root.querySelectorAll('[data-chart-panel]').forEach((panel) => {
-    panel.querySelectorAll('.chart-btn').forEach((btn) => {
+    panel.querySelectorAll('.chart-btn[data-action]').forEach((btn) => {
       btn.onclick = () => {
         const action = btn.dataset.action;
         if (action === 'minimize') {
@@ -1699,7 +1800,11 @@ function userListHtml(users, empty) {
 async function renderDashboard() {
   const [stats, seasonCmp, resetMeta] = await Promise.all([
     getDashboardStats(),
-    getSeasonComparison(),
+    (async () => {
+      const cfg = await getSeasonConfig();
+      const oldNum = Math.max(1, cfg.seasonNumber - 1);
+      return getSeasonComparison(`s${oldNum}`, cfg.seasonId, `Season ${oldNum}`, cfg.seasonLabel);
+    })(),
     getDailyResetMeta(),
   ]);
 
@@ -1745,9 +1850,9 @@ async function renderDashboard() {
         yLabel: 'Number of users',
         xLabel: 'User status',
       })}
-      ${renderChartPanel('Old vs new season', seasonLabels, seasonValues, {
+      ${renderChartPanel('Old vs new season (all users)', seasonLabels, seasonValues, {
         id: 'chart-season-compare',
-        yLabel: 'Number of users',
+        yLabel: 'Total users',
         xLabel: 'Season',
       })}
     </div>
@@ -2115,44 +2220,55 @@ async function renderAi() {
 
 async function renderSeason() {
   const config = await getSeasonConfig();
-  const [leaderboard, stats, seasonCmp] = await Promise.all([
-    getSeasonLeaderboard(config.seasonId, 10),
-    getSeasonStats(config.seasonId),
-    getSeasonComparison(),
+  const defaultOldId = `s${Math.max(1, config.seasonNumber - 1)}`;
+  const defaultNewId = config.seasonId;
+
+  const [currentUsers, seasonCmp] = await Promise.all([
+    getAllSeasonUsers(config.seasonId),
+    getSeasonComparison(defaultOldId, defaultNewId, `Season ${Math.max(1, config.seasonNumber - 1)}`, config.seasonLabel),
   ]);
 
-  const chartLabels = leaderboard.slice(0, 5).map((u) => u.name || playerId(u));
-  const chartValues = leaderboard.slice(0, 5).map((u) => u.score);
-  const seasonLabels = [seasonCmp.oldSeason.label, seasonCmp.newSeason.label];
-  const seasonValues = [seasonCmp.oldSeason.count, seasonCmp.newSeason.count];
+  let compareView = 'old';
+  let showScoreUsers = true;
 
   pageContent.innerHTML = `
     <div class="page-header">
       <div>
         <h2>Season</h2>
-        <p class="subtitle">${esc(config.seasonLabel)} • ${esc(config.seasonId.toUpperCase())}</p>
+        <p class="subtitle">${esc(config.seasonLabel)} • ${esc(config.seasonId.toUpperCase())} • counts are all users in season</p>
       </div>
       <div class="page-actions">
         <button class="btn btn-outline btn-sm" id="season-refresh">↻ Refresh</button>
       </div>
     </div>
     <div class="stats-grid">
-      <div class="stat-card"><div class="label">Season number</div><div class="value blue">${config.seasonNumber}</div></div>
-      <div class="stat-card"><div class="label">Players in season</div><div class="value">${stats.players}</div></div>
-      <div class="stat-card"><div class="label">Logged in today</div><div class="value green">${stats.activeToday}</div></div>
-      <div class="stat-card"><div class="label">Average score</div><div class="value">${stats.avgScore}</div></div>
+      <div class="stat-card"><div class="label">Current season</div><div class="value blue">${esc(config.seasonLabel)}</div></div>
+      <div class="stat-card"><div class="label">Users in current</div><div class="value">${currentUsers.length}</div></div>
+      <div class="stat-card"><div class="label">Old season users</div><div class="value">${seasonCmp.oldSeason.count}</div></div>
+      <div class="stat-card"><div class="label">New season users</div><div class="value green">${seasonCmp.newSeason.count}</div></div>
     </div>
-    <div class="charts-row">
-      ${renderChartPanel(`Top scores — ${config.seasonLabel}`, chartLabels, chartValues, {
-        id: 'chart-season-scores',
-        yLabel: 'Score',
-        xLabel: 'Top players',
-      })}
-      ${renderChartPanel('Old vs new season users', seasonLabels, seasonValues, {
-        id: 'chart-season-users',
-        yLabel: 'Number of users',
-        xLabel: 'Season',
-      })}
+    <div id="season-scores-chart-slot"></div>
+    <div class="panel">
+      <h3>Compare seasons (total users — not login filter)</h3>
+      <div class="season-compare-controls">
+        <div>
+          <label for="cmp-old">Old season ID</label>
+          <input id="cmp-old" value="${esc(defaultOldId)}" placeholder="s1" />
+        </div>
+        <div>
+          <label for="cmp-new">New season ID</label>
+          <input id="cmp-new" value="${esc(defaultNewId)}" placeholder="s2" />
+        </div>
+        <div>
+          <button type="button" class="btn btn-primary btn-sm" id="cmp-apply" style="width:100%">Update comparison</button>
+        </div>
+      </div>
+      <div id="season-compare-chart-slot"></div>
+      <div class="season-tab-row" id="cmp-tabs">
+        <button type="button" class="btn btn-outline btn-sm active" data-cmp-tab="old" id="cmp-tab-old">Old season users (${seasonCmp.oldSeason.count})</button>
+        <button type="button" class="btn btn-outline btn-sm" data-cmp-tab="new" id="cmp-tab-new">New season users (${seasonCmp.newSeason.count})</button>
+      </div>
+      <div class="season-users-panel" id="cmp-users-panel"></div>
     </div>
     <div class="panel">
       <h3>Season config (Firestore: app_config / leaderboard)</h3>
@@ -2175,41 +2291,131 @@ async function renderSeason() {
         <button type="submit" form="season-form" class="btn btn-primary btn-sm">Save config</button>
       </div>
       <p id="season-msg" class="subtitle" style="margin-top:0.75rem"></p>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Rank</th><th>Player</th><th>Code</th><th class="text-right">Score</th><th class="text-right">Games</th><th>Last active</th></tr></thead>
-        <tbody>
-          ${
-            leaderboard.length === 0
-              ? '<tr><td colspan="6" class="empty">No players in this season yet.</td></tr>'
-              : leaderboard
-                  .map(
-                    (u) => `<tr>
-            <td>#${u.rank}</td>
-            <td>${esc(u.name || 'Unnamed')}</td>
-            <td>${esc(playerId(u))}</td>
-            <td class="text-right">${u.score}</td>
-            <td class="text-right">${u.gamesPlayed}</td>
-            <td>${fmtRelative(u.lastUpdated)}</td>
-          </tr>`,
-                  )
-                  .join('')
-          }
-        </tbody>
-      </table>
     </div>`;
 
-  bindChartControls(pageContent);
   const msg = $('#season-msg');
+  let cmpData = seasonCmp;
+
+  function renderScoresChart() {
+    const labels = currentUsers.slice(0, 5).map((u) => u.name || playerId(u));
+    const values = currentUsers.slice(0, 5).map((u) => u.score);
+    const usersBlock = showScoreUsers
+      ? `<div class="season-users-panel" id="score-users-panel">
+          <h4>All users in ${esc(config.seasonLabel)} (${currentUsers.length})</h4>
+          ${renderSeasonUsersTable(currentUsers, 'No users in this season.')}
+        </div>`
+      : '';
+
+    $('#season-scores-chart-slot').innerHTML = renderChartPanel(
+      `Top scores — ${config.seasonLabel}`,
+      labels,
+      values,
+      {
+        id: 'chart-season-scores',
+        yLabel: 'Score',
+        xLabel: 'Top players',
+        extraButton: showScoreUsers ? 'Hide users' : 'All users',
+        extraButtonId: 'toggle-score-users',
+        bodyBelow: usersBlock,
+      },
+    );
+    bindChartControls($('#season-scores-chart-slot'));
+    const toggleBtn = $('#season-scores-chart-slot').querySelector('[data-extra-btn="toggle-score-users"]');
+    if (toggleBtn) {
+      toggleBtn.onclick = () => {
+        showScoreUsers = !showScoreUsers;
+        renderScoresChart();
+      };
+    }
+  }
+
+  function updateCompareTabs() {
+    $('#cmp-tab-old').textContent = `Old season users (${cmpData.oldSeason.count})`;
+    $('#cmp-tab-new').textContent = `New season users (${cmpData.newSeason.count})`;
+  }
+
+  function renderCompareChart() {
+    const labels = [cmpData.oldSeason.label, cmpData.newSeason.label];
+    const values = [cmpData.oldSeason.count, cmpData.newSeason.count];
+    $('#season-compare-chart-slot').innerHTML = renderChartPanel('Old vs new season (all users)', labels, values, {
+      id: 'chart-season-users',
+      yLabel: 'Total users',
+      xLabel: 'Season',
+    });
+    bindChartControls($('#season-compare-chart-slot'));
+    updateCompareTabs();
+    renderCompareUsersTable();
+  }
+
+  function renderCompareUsersTable() {
+    const users = compareView === 'new' ? cmpData.newSeason.users : cmpData.oldSeason.users;
+    const title =
+      compareView === 'new'
+        ? `${cmpData.newSeason.label} (${cmpData.newSeason.id}) — ${cmpData.newSeason.count} users`
+        : `${cmpData.oldSeason.label} (${cmpData.oldSeason.id}) — ${cmpData.oldSeason.count} users`;
+    $('#cmp-users-panel').innerHTML = `
+      <h4>${esc(title)}</h4>
+      ${renderSeasonUsersTable(users, 'No users in this season.')}`;
+  }
+
+  async function applyComparison() {
+    const oldId = $('#cmp-old').value.trim().toLowerCase();
+    const newId = $('#cmp-new').value.trim().toLowerCase();
+    if (!oldId || !newId) {
+      msg.textContent = 'Enter both old and new season IDs.';
+      return;
+    }
+    $('#cmp-apply').disabled = true;
+    msg.textContent = 'Loading season data…';
+    try {
+      const oldNum = Number(oldId.replace(/^s/i, '')) || '';
+      const newLabel = newId === config.seasonId ? config.seasonLabel : newId.toUpperCase();
+      cmpData = await getSeasonComparison(
+        oldId,
+        newId,
+        oldNum ? `Season ${oldNum}` : oldId.toUpperCase(),
+        newLabel,
+      );
+      msg.textContent = `Old: ${cmpData.oldSeason.count} users • New: ${cmpData.newSeason.count} users`;
+      renderCompareChart();
+    } catch (e) {
+      msg.textContent = e.message || 'Failed to load comparison.';
+    } finally {
+      $('#cmp-apply').disabled = false;
+    }
+  }
+
+  renderScoresChart();
+  renderCompareChart();
+
+  $('#cmp-tabs').onclick = (e) => {
+    const btn = e.target.closest('button[data-cmp-tab]');
+    if (!btn) return;
+    compareView = btn.dataset.cmpTab;
+    document.querySelectorAll('#cmp-tabs button').forEach((b) => b.classList.toggle('active', b === btn));
+    renderCompareUsersTable();
+  };
+
+  $('#cmp-apply').onclick = () => void applyComparison();
+  $('#cmp-old').onkeydown = (e) => {
+    if (e.key === 'Enter') void applyComparison();
+  };
+  $('#cmp-new').onkeydown = (e) => {
+    if (e.key === 'Enter') void applyComparison();
+  };
 
   $('#season-refresh').onclick = () => void renderSeason();
+
+  $('#season-id').oninput = () => {
+    $('#cmp-new').value = $('#season-id').value.trim().toLowerCase();
+  };
 
   $('#season-next').onclick = () => {
     const nextNum = Number($('#season-number').value || config.seasonNumber) + 1;
     $('#season-number').value = String(nextNum);
     $('#season-id').value = `s${nextNum}`;
     $('#season-label').value = `Season ${nextNum}`;
+    $('#cmp-new').value = `s${nextNum}`;
     msg.textContent = 'Fields updated — click Save config to apply.';
   };
 
