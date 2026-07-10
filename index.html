@@ -1597,7 +1597,6 @@ function parseRtdbRooms(snap) {
 }
 
 async function getMatches(aiOnly) {
-  const start = startOfToday();
   const { get, ref } = await rtdbApi();
   const snaps = await Promise.all(GAME_PATHS.map(({ path }) => get(ref(rtdb, path))));
   const records = [];
@@ -1611,8 +1610,8 @@ async function getMatches(aiOnly) {
       if (!aiOnly && isAi) continue;
       if (data.gameEnded !== true) continue;
       const endedAt = Number(data.matchEndsAt ?? data.createdAt ?? 0);
-      if (endedAt < start) continue;
       records.push({
+        gamePath: path,
         gameType: label,
         roomCode: code,
         hostName: data.hostName || 'Host',
@@ -1642,6 +1641,7 @@ async function getAiRecords() {
       const ended = data.gameEnded === true;
       const started = data.gameStarted === true;
       records.push({
+        gamePath: path,
         gameType: label,
         roomCode: code,
         aiName: data.guestName || 'AI Bot',
@@ -1653,6 +1653,23 @@ async function getAiRecords() {
     }
   });
   return records.sort((a, b) => b.joinedAt - a.joinedAt);
+}
+
+async function deleteRtdbRoom(gamePath, roomCode) {
+  const { ref, remove } = await rtdbApi();
+  await remove(ref(rtdb, `${gamePath}/${roomCode}`));
+}
+
+async function deleteAllMatchRecords(aiOnly) {
+  const records = await getMatches(aiOnly);
+  await Promise.all(records.map((r) => deleteRtdbRoom(r.gamePath, r.roomCode)));
+  return records.length;
+}
+
+async function deleteAllAiRooms() {
+  const records = await getAiRecords();
+  await Promise.all(records.map((r) => deleteRtdbRoom(r.gamePath, r.roomCode)));
+  return records.length;
 }
 
 const CHART_COLORS = ['#22c55e', '#3b82f6', '#eab308', '#ec4899', '#a855f7', '#f97316', '#06b6d4', '#ef4444'];
@@ -1866,6 +1883,8 @@ async function route(options = {}) {
     pageContent.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   } else if (page === 'user-detail') {
     return;
+  } else if (soft && !['dashboard', 'users', 'season', 'matches', 'ai'].includes(page)) {
+    return;
   }
 
   try {
@@ -1879,6 +1898,10 @@ async function route(options = {}) {
 
 let usersPageState = null;
 let seasonPageState = { selectedSeasonId: null, showScoreUsers: true };
+let matchesPageState = null;
+let aiPageState = null;
+let dashPanelCache = {};
+let lastDashSubtitleAt = 0;
 let adminRefreshTimer = null;
 
 function stopAdminAutoRefresh() {
@@ -1894,6 +1917,39 @@ function startAdminAutoRefresh() {
     if (!isAdmin || document.hidden) return;
     void route({ soft: true });
   }, 100);
+}
+
+function chartFingerprint(labels, values) {
+  return JSON.stringify({ labels, values });
+}
+
+const chartRenderCache = new Map();
+
+function mountChartPanel(container, cacheKey, title, labels, values, options = {}) {
+  if (!container) return;
+  const fp = chartFingerprint(labels, values);
+  if (chartRenderCache.get(cacheKey) === fp && container.querySelector('[data-chart-panel]')) {
+    return;
+  }
+  chartRenderCache.set(cacheKey, fp);
+  container.innerHTML = renderChartPanel(title, labels, values, options);
+  bindChartControls(container);
+}
+
+function setTextIfChanged(el, text) {
+  if (el && el.textContent !== String(text)) el.textContent = String(text);
+}
+
+function usersPanelKey(users) {
+  return users.map((u) => `${u.id}:${u.score}:${Math.max(u.lastUpdated, u.lastLogin)}`).join('|');
+}
+
+function updateUserPanel(panel, title, users, empty, cacheKey, panelCache) {
+  if (!panel) return;
+  const key = usersPanelKey(users);
+  if (panelCache[cacheKey] === key) return;
+  panelCache[cacheKey] = key;
+  panel.innerHTML = `<h3>${title}</h3>${userListHtml(users, empty)}`;
 }
 
 function userListHtml(users, empty) {
@@ -1923,30 +1979,51 @@ async function renderDashboard(_param, options = {}) {
   const seasonIndex = await buildSeasonIndex(config);
   const seasonLabels = seasonIndex.seasons.map((s) => s.label);
   const seasonValues = seasonIndex.seasons.map((s) => s.count);
+  const statusLabels = ['Online', 'Login Today', 'Inactive'];
+  const statusValues = [stats.activeNow, stats.activeToday, stats.inactiveUsers];
 
   if (soft && $('#dash-stat-total')) {
-    $('#dash-stat-total').textContent = stats.totalUsers;
-    $('#dash-stat-online').textContent = stats.activeNow;
-    $('#dash-stat-today').textContent = stats.activeToday;
-    $('#dash-stat-inactive').textContent = stats.inactiveUsers;
-    $('#dash-subtitle').textContent = `Updated ${fmtDate(stats.generatedAt)} • Auto-refresh 100ms`;
-    const onlinePanel = $('#dash-panel-online');
-    const todayPanel = $('#dash-panel-today');
-    const inactivePanel = $('#dash-panel-inactive');
-    if (onlinePanel) onlinePanel.innerHTML = `<h3>Online now</h3>${userListHtml(stats.online, 'No users online.')}`;
-    if (todayPanel) todayPanel.innerHTML = `<h3>Logged in today</h3>${userListHtml([...stats.online, ...stats.today], 'No users logged in today.')}`;
-    if (inactivePanel) inactivePanel.innerHTML = `<h3>Inactive / banned</h3>${userListHtml(stats.inactive, 'No inactive users.')}`;
-    const chartSlot = $('#dash-season-chart-slot');
-    if (chartSlot) {
-      chartSlot.innerHTML = renderChartPanel('All seasons (users saved per season)', seasonLabels, seasonValues, {
+    setTextIfChanged($('#dash-stat-total'), stats.totalUsers);
+    setTextIfChanged($('#dash-stat-online'), stats.activeNow);
+    setTextIfChanged($('#dash-stat-today'), stats.activeToday);
+    setTextIfChanged($('#dash-stat-inactive'), stats.inactiveUsers);
+    if (Date.now() - lastDashSubtitleAt > 5000) {
+      setTextIfChanged($('#dash-subtitle'), `Updated ${fmtDate(stats.generatedAt)} • Live`);
+      lastDashSubtitleAt = Date.now();
+    }
+    updateUserPanel($('#dash-panel-online'), 'Online now', stats.online, 'No users online.', 'online', dashPanelCache);
+    updateUserPanel(
+      $('#dash-panel-today'),
+      'Logged in today',
+      [...stats.online, ...stats.today],
+      'No users logged in today.',
+      'today',
+      dashPanelCache,
+    );
+    updateUserPanel($('#dash-panel-inactive'), 'Inactive / banned', stats.inactive, 'No inactive users.', 'inactive', dashPanelCache);
+    mountChartPanel($('#dash-status-chart-slot'), 'dash-status', 'User status', statusLabels, statusValues, {
+      id: 'chart-user-status',
+      yLabel: 'Number of users',
+      xLabel: 'User status',
+    });
+    mountChartPanel(
+      $('#dash-season-chart-slot'),
+      'dash-season',
+      'All seasons (users saved per season)',
+      seasonLabels,
+      seasonValues,
+      {
         id: 'chart-season-compare',
         yLabel: 'Total users',
         xLabel: 'Season',
-      });
-      bindChartControls(chartSlot);
-    }
+      },
+    );
     return;
   }
+
+  dashPanelCache = {};
+  chartRenderCache.delete('dash-status');
+  chartRenderCache.delete('dash-season');
 
   let resetNotice = '';
   const today = todayKey();
@@ -1961,14 +2038,14 @@ async function renderDashboard(_param, options = {}) {
     }
   }
 
-  const statusLabels = ['Online', 'Login Today', 'Inactive'];
-  const statusValues = [stats.activeNow, stats.activeToday, stats.inactiveUsers];
+  const statusLabelsInit = statusLabels;
+  const statusValuesInit = statusValues;
 
   pageContent.innerHTML = `
     <div class="page-header">
       <div>
         <h2>Dashboard</h2>
-        <p class="subtitle" id="dash-subtitle">Updated ${fmtDate(stats.generatedAt)} • Auto-refresh 100ms</p>
+        <p class="subtitle" id="dash-subtitle">Updated ${fmtDate(stats.generatedAt)} • Live</p>
       </div>
       <div class="page-actions">
         <button class="btn btn-outline btn-sm" id="dash-reset-tasks">Reset daily tasks</button>
@@ -1982,17 +2059,21 @@ async function renderDashboard(_param, options = {}) {
       <div class="stat-card"><div class="label">Logged in today</div><div class="value blue" id="dash-stat-today">${stats.activeToday}</div></div>
       <div class="stat-card"><div class="label">Inactive / banned</div><div class="value" id="dash-stat-inactive">${stats.inactiveUsers}</div></div>
     </div>
-    <div class="charts-row" id="dash-season-chart-slot">
-      ${renderChartPanel('User status', statusLabels, statusValues, {
+    <div class="charts-row">
+      <div id="dash-status-chart-slot">
+      ${renderChartPanel('User status', statusLabelsInit, statusValuesInit, {
         id: 'chart-user-status',
         yLabel: 'Number of users',
         xLabel: 'User status',
       })}
+      </div>
+      <div id="dash-season-chart-slot">
       ${renderChartPanel('All seasons (users saved per season)', seasonLabels, seasonValues, {
         id: 'chart-season-compare',
         yLabel: 'Total users',
         xLabel: 'Season',
       })}
+      </div>
     </div>
     <div class="stats-grid">
       <div class="panel" id="dash-panel-online"><h3>Online now</h3>${userListHtml(stats.online, 'No users online.')}</div>
@@ -2057,20 +2138,30 @@ async function renderUsers(_param, options = {}) {
     );
   }
 
+  function usersTableKey(users) {
+    return `${usersPageState.tab}:${usersPageState.selectedSeasonId}:${usersPageState.query}:${users.map((u) => `${u.id}:${u.score}:${u.rank}`).join('|')}`;
+  }
+
   function renderUsersTableBody() {
     const users = seasonUsersForTable();
     const season = seasonIndex.getSeason(usersPageState.selectedSeasonId);
-    $('#users-season-hint').textContent = season
-      ? `${season.label} (${season.count} users) • Auto-refresh 100ms`
-      : 'Season not found';
+    const hintEl = $('#users-season-hint');
+    if (hintEl) {
+      setTextIfChanged(hintEl, season ? `${season.label} (${season.count} users) • Live` : 'Season not found');
+    }
 
     document.querySelectorAll('#users-season-row button').forEach((btn) => {
       const sid = btn.dataset.seasonId;
       const s = seasonIndex.getSeason(sid);
-      btn.textContent = s ? `${s.label} (${s.count})` : sid.toUpperCase();
+      const label = s ? `${s.label} (${s.count})` : sid.toUpperCase();
+      if (btn.textContent !== label) btn.textContent = label;
       btn.classList.toggle('active', sid === usersPageState.selectedSeasonId);
       btn.classList.toggle('current', sid === seasonIndex.currentSeasonId);
     });
+
+    const tKey = usersTableKey(users);
+    if (usersPageState.tableKey === tKey) return;
+    usersPageState.tableKey = tKey;
 
     $('#users-table-body').innerHTML =
       users.length === 0
@@ -2333,17 +2424,25 @@ async function renderTasks() {
   await load();
 }
 
-async function renderMatches() {
-  let aiOnly = false;
+async function renderMatches(_param, options = {}) {
+  const soft = options.soft === true;
+  let aiOnly = matchesPageState?.aiOnly ?? false;
 
   async function load() {
     const records = await getMatches(aiOnly);
+    const countEl = $('#matches-count');
+    const countText = `${records.length} completed match${records.length === 1 ? '' : 'es'}`;
+    setTextIfChanged(countEl, countText);
+    const rowKey = records.map((r) => `${r.gamePath}/${r.roomCode}:${r.endedAt}`).join('|');
+    if (matchesPageState?.rowKey === rowKey && $('#matches-body')?.children.length) return;
+    if (matchesPageState) matchesPageState.rowKey = rowKey;
+
     $('#matches-body').innerHTML =
       records.length === 0
-        ? '<tr><td colspan="8" class="empty">No matches today</td></tr>'
+        ? '<tr><td colspan="9" class="empty">No match records</td></tr>'
         : records
             .map(
-              (r) => `<tr>
+              (r) => `<tr data-path="${esc(r.gamePath)}" data-code="${esc(r.roomCode)}">
         <td>${esc(r.gameType)}</td>
         <td>${esc(r.roomCode)}</td>
         <td>${esc(r.hostName)}</td>
@@ -2352,25 +2451,55 @@ async function renderMatches() {
         <td>${esc(r.winner || '—')}</td>
         <td class="text-right">${r.betAmount}</td>
         <td>${fmtDate(r.endedAt)}</td>
+        <td><button type="button" class="btn btn-danger btn-sm btn-del-match">Delete</button></td>
       </tr>`,
             )
             .join('');
+
+    document.querySelectorAll('.btn-del-match').forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const row = btn.closest('tr');
+        if (!row || !confirm(`Delete match ${row.dataset.code}?`)) return;
+        btn.disabled = true;
+        try {
+          await deleteRtdbRoom(row.dataset.path, row.dataset.code);
+          await load();
+        } catch (err) {
+          alert(err.message || 'Delete failed');
+          btn.disabled = false;
+        }
+      };
+    });
   }
+
+  if (soft && $('#matches-body')) {
+    if (!matchesPageState) matchesPageState = { aiOnly };
+    await load();
+    return;
+  }
+
+  matchesPageState = { aiOnly, rowKey: '' };
 
   pageContent.innerHTML = `
     <div class="page-header">
-      <div><h2>Match records</h2><p class="subtitle">Today's completed matches</p></div>
+      <div>
+        <h2>Match records</h2>
+        <p class="subtitle">All completed matches from Firebase • <span id="matches-count">0 matches</span></p>
+      </div>
       <div class="page-actions">
         <div class="toggle-group" id="match-tab">
-          <button data-ai="0" class="active">Human vs Human</button>
-          <button data-ai="1">AI matches</button>
+          <button data-ai="0" class="${!aiOnly ? 'active' : ''}">Human vs Human</button>
+          <button data-ai="1" class="${aiOnly ? 'active' : ''}">AI matches</button>
         </div>
+        <button class="btn btn-danger btn-sm" id="match-delete-all">Delete all</button>
         <button class="btn btn-outline btn-sm" id="match-refresh">↻ Refresh</button>
       </div>
     </div>
+    <p id="match-msg" class="subtitle" style="margin-bottom:1rem"></p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Game</th><th>Room</th><th>Host</th><th>Guest</th><th class="text-right">Score</th><th>Winner</th><th class="text-right">Bet</th><th>Ended</th></tr></thead>
+        <thead><tr><th>Game</th><th>Room</th><th>Host</th><th>Guest</th><th class="text-right">Score</th><th>Winner</th><th class="text-right">Bet</th><th>Ended</th><th></th></tr></thead>
         <tbody id="matches-body"></tbody>
       </table>
     </div>`;
@@ -2379,36 +2508,53 @@ async function renderMatches() {
     const btn = e.target.closest('button[data-ai]');
     if (!btn) return;
     aiOnly = btn.dataset.ai === '1';
+    matchesPageState.aiOnly = aiOnly;
     document.querySelectorAll('#match-tab button').forEach((b) => b.classList.toggle('active', b === btn));
     void load();
   };
   $('#match-refresh').onclick = () => void load();
+  $('#match-delete-all').onclick = async () => {
+    const label = aiOnly ? 'AI match records' : 'human vs human match records';
+    if (!confirm(`Delete ALL ${label} from Firebase? This cannot be undone.`)) return;
+    const btn = $('#match-delete-all');
+    btn.disabled = true;
+    $('#match-msg').textContent = 'Deleting from Firebase…';
+    try {
+      const count = await deleteAllMatchRecords(aiOnly);
+      $('#match-msg').textContent = `Deleted ${count} match record${count === 1 ? '' : 's'} from Firebase.`;
+      await load();
+    } catch (e) {
+      $('#match-msg').textContent = e.message || 'Delete failed.';
+    } finally {
+      btn.disabled = false;
+    }
+  };
   await load();
 }
 
-async function renderAi() {
-  const records = await getAiRecords();
-  const statusBadge = (s) => {
-    if (s === 'ended') return '<span class="badge badge-muted">Ended</span>';
-    if (s === 'in_match') return '<span class="badge badge-warn">In match</span>';
-    return '<span class="badge badge-info">Waiting</span>';
-  };
+async function renderAi(_param, options = {}) {
+  const soft = options.soft === true;
 
-  pageContent.innerHTML = `
-    <div class="page-header">
-      <div><h2>AI control</h2><p class="subtitle">AI opponent rooms</p></div>
-      <button class="btn btn-outline btn-sm" onclick="location.reload()">↻ Refresh</button>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Game</th><th>Room</th><th>AI name</th><th>Host</th><th>Status</th><th class="text-right">Bet</th><th>Joined</th></tr></thead>
-        <tbody>
-          ${
-            records.length === 0
-              ? '<tr><td colspan="7" class="empty">No AI rooms</td></tr>'
-              : records
-                  .map(
-                    (r) => `<tr>
+  async function load() {
+    const records = await getAiRecords();
+    const countText = `${records.length} AI room${records.length === 1 ? '' : 's'}`;
+    setTextIfChanged($('#ai-count'), countText);
+    const rowKey = records.map((r) => `${r.gamePath}/${r.roomCode}:${r.status}`).join('|');
+    if (aiPageState?.rowKey === rowKey && $('#ai-body')?.children.length) return;
+    if (aiPageState) aiPageState.rowKey = rowKey;
+
+    const statusBadge = (s) => {
+      if (s === 'ended') return '<span class="badge badge-muted">Ended</span>';
+      if (s === 'in_match') return '<span class="badge badge-warn">In match</span>';
+      return '<span class="badge badge-info">Waiting</span>';
+    };
+
+    $('#ai-body').innerHTML =
+      records.length === 0
+        ? '<tr><td colspan="8" class="empty">No AI rooms</td></tr>'
+        : records
+            .map(
+              (r) => `<tr data-path="${esc(r.gamePath)}" data-code="${esc(r.roomCode)}">
             <td>${esc(r.gameType)}</td>
             <td>${esc(r.roomCode)}</td>
             <td>${esc(r.aiName)}</td>
@@ -2416,13 +2562,72 @@ async function renderAi() {
             <td>${statusBadge(r.status)}</td>
             <td class="text-right">${r.betAmount}</td>
             <td>${fmtDate(r.joinedAt)}</td>
+            <td><button type="button" class="btn btn-danger btn-sm btn-del-ai">Delete</button></td>
           </tr>`,
-                  )
-                  .join('')
-          }
-        </tbody>
+            )
+            .join('');
+
+    document.querySelectorAll('.btn-del-ai').forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const row = btn.closest('tr');
+        if (!row || !confirm(`Delete AI room ${row.dataset.code}?`)) return;
+        btn.disabled = true;
+        try {
+          await deleteRtdbRoom(row.dataset.path, row.dataset.code);
+          await load();
+        } catch (err) {
+          alert(err.message || 'Delete failed');
+          btn.disabled = false;
+        }
+      };
+    });
+  }
+
+  if (soft && $('#ai-body')) {
+    if (!aiPageState) aiPageState = {};
+    await load();
+    return;
+  }
+
+  aiPageState = { rowKey: '' };
+
+  pageContent.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2>AI control</h2>
+        <p class="subtitle">All AI opponent rooms in Firebase • <span id="ai-count">0 rooms</span></p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-danger btn-sm" id="ai-delete-all">Delete all AI rooms</button>
+        <button class="btn btn-outline btn-sm" id="ai-refresh">↻ Refresh</button>
+      </div>
+    </div>
+    <p id="ai-msg" class="subtitle" style="margin-bottom:1rem"></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Game</th><th>Room</th><th>AI name</th><th>Host</th><th>Status</th><th class="text-right">Bet</th><th>Joined</th><th></th></tr></thead>
+        <tbody id="ai-body"></tbody>
       </table>
     </div>`;
+
+  $('#ai-refresh').onclick = () => void load();
+  $('#ai-delete-all').onclick = async () => {
+    if (!confirm('Delete ALL AI rooms from Firebase? This removes waiting, in-match, and ended AI rooms.')) return;
+    const btn = $('#ai-delete-all');
+    btn.disabled = true;
+    $('#ai-msg').textContent = 'Deleting from Firebase…';
+    try {
+      const count = await deleteAllAiRooms();
+      $('#ai-msg').textContent = `Deleted ${count} AI room${count === 1 ? '' : 's'} from Firebase.`;
+      await load();
+    } catch (e) {
+      $('#ai-msg').textContent = e.message || 'Delete failed.';
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  await load();
 }
 
 async function renderSeason(_param, options = {}) {
@@ -2444,49 +2649,73 @@ async function renderSeason(_param, options = {}) {
       const values = season.users.slice(0, 5).map((u) => u.score);
       const overviewLabels = seasonIndex.seasons.map((s) => s.label);
       const overviewValues = seasonIndex.seasons.map((s) => s.count);
-      const overviewSlot = $('#season-overview-chart-slot');
-      if (overviewSlot) {
-        overviewSlot.innerHTML = renderChartPanel('All seasons — users per season', overviewLabels, overviewValues, {
+      mountChartPanel(
+        $('#season-overview-chart-slot'),
+        'season-overview',
+        'All seasons — users per season',
+        overviewLabels,
+        overviewValues,
+        {
           id: 'chart-all-seasons',
           yLabel: 'Total users',
           xLabel: 'Season',
-        });
-        bindChartControls(overviewSlot);
-      }
+        },
+      );
+
       const usersBlock = seasonPageState.showScoreUsers
         ? `<div class="season-users-panel" id="score-users-panel">
             <h4>All users in ${esc(season.label)} (${season.count})</h4>
             ${renderSeasonUsersTable(season.users, 'No users in this season yet.')}
           </div>`
         : '';
-      $('#season-scores-chart-slot').innerHTML = renderChartPanel(
-        `Top scores — ${season.label}`,
-        labels,
-        values,
-        {
-          id: 'chart-season-scores',
-          yLabel: 'Score',
-          xLabel: 'Top players',
-          extraButton: seasonPageState.showScoreUsers ? 'Hide users' : 'All users',
-          extraButtonId: 'toggle-score-users',
-          bodyBelow: usersBlock,
-        },
-      );
-      bindChartControls($('#season-scores-chart-slot'));
-      const toggleBtn = $('#season-scores-chart-slot').querySelector('[data-extra-btn="toggle-score-users"]');
-      if (toggleBtn) {
-        toggleBtn.onclick = () => {
-          seasonPageState.showScoreUsers = !seasonPageState.showScoreUsers;
-          void renderSeason(null, { soft: true });
-        };
+      const scoresFp = chartFingerprint(labels, values) + (seasonPageState.showScoreUsers ? ':show' : ':hide') + ':' + usersPanelKey(season.users);
+      const scoresCacheKey = 'season-scores';
+      const scoresSlot = $('#season-scores-chart-slot');
+      if (chartRenderCache.get(scoresCacheKey) !== scoresFp || !scoresSlot.querySelector('[data-chart-panel]')) {
+        chartRenderCache.set(scoresCacheKey, scoresFp);
+        scoresSlot.innerHTML = renderChartPanel(
+          `Top scores — ${season.label}`,
+          labels,
+          values,
+          {
+            id: 'chart-season-scores',
+            yLabel: 'Score',
+            xLabel: 'Top players',
+            extraButton: seasonPageState.showScoreUsers ? 'Hide users' : 'All users',
+            extraButtonId: 'toggle-score-users',
+            bodyBelow: usersBlock,
+          },
+        );
+        bindChartControls(scoresSlot);
+        const toggleBtn = scoresSlot.querySelector('[data-extra-btn="toggle-score-users"]');
+        if (toggleBtn) {
+          toggleBtn.onclick = () => {
+            seasonPageState.showScoreUsers = !seasonPageState.showScoreUsers;
+            chartRenderCache.delete('season-scores');
+            void renderSeason(null, { soft: true });
+          };
+        }
+      } else if (seasonPageState.showScoreUsers) {
+        const panel = $('#score-users-panel');
+        const tableHtml = renderSeasonUsersTable(season.users, 'No users in this season yet.');
+        const tableKey = usersPanelKey(season.users);
+        if (panel && panel.dataset.key !== tableKey) {
+          panel.dataset.key = tableKey;
+          panel.innerHTML = `<h4>All users in ${esc(season.label)} (${season.count})</h4>${tableHtml}`;
+        }
       }
+
       const hint = $('#season-pick-hint');
       if (hint) {
-        hint.innerHTML = `Showing top players for <strong>${esc(season.label)}</strong> — ${season.count} total users`;
+        const hintText = `Showing top players for ${season.label} — ${season.count} total users`;
+        setTextIfChanged(hint, hintText);
       }
     }
     return;
   }
+
+  chartRenderCache.delete('season-overview');
+  chartRenderCache.delete('season-scores');
 
   let selectedSeasonId = seasonPageState.selectedSeasonId || config.seasonId.toLowerCase();
   let showScoreUsers = seasonPageState.showScoreUsers;
@@ -2501,7 +2730,7 @@ async function renderSeason(_param, options = {}) {
     <div class="page-header">
       <div>
         <h2>Season</h2>
-        <p class="subtitle">Each season keeps its own users — auto-refresh 100ms</p>
+        <p class="subtitle">Each season keeps its own users — live updates</p>
       </div>
       <div class="page-actions">
         <button class="btn btn-outline btn-sm" id="season-refresh">↻ Refresh</button>
