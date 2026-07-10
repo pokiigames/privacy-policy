@@ -844,23 +844,21 @@ tr.clickable {
   margin-bottom: 1rem;
 }
 
-.season-picker-btn.active {
+.season-pick-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.season-pick-row button.active {
   background: rgba(59, 130, 246, 0.2);
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.chart-bar-clickable {
-  cursor: pointer;
-}
-
-.chart-bar-clickable:hover {
-  opacity: 0.88;
-}
-
-.chart-bar-clickable.is-selected {
-  stroke: #2563eb;
-  stroke-width: 3;
+.season-pick-row button.current {
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.35);
 }
 
 .btn:disabled {
@@ -1245,19 +1243,89 @@ async function getSeasonStats(seasonId) {
   return { players, totalScore, activeToday, avgScore: players ? Math.round(totalScore / players) : 0 };
 }
 
-async function getAllSeasonUsers(seasonId) {
+async function buildSeasonIndex(config) {
   await ensureDb();
-  const { getDocs } = await fs();
+  const { getDocs, collection } = await fs();
   const adminEmails = await resolveAdminEmails();
-  const snap = await getDocs(usersCol);
-  return snap.docs
-    .filter((d) => {
-      const user = userFromMap(d.id, d.data());
-      return !isAdminUser(user, adminEmails) && userMatchesSeason(d.data(), seasonId);
-    })
-    .map((d) => userFromMap(d.id, d.data()))
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
-    .map((u, i) => ({ ...u, rank: i + 1 }));
+  const usersSnap = await getDocs(usersCol);
+
+  const maxNum = Math.max(1, config.seasonNumber);
+  const seasons = Array.from({ length: maxNum }, (_, i) => {
+    const num = i + 1;
+    const seasonId = `s${num}`;
+    const isCurrent = seasonId === config.seasonId.toLowerCase();
+    return {
+      seasonId,
+      seasonNumber: num,
+      label: isCurrent ? config.seasonLabel : `Season ${num}`,
+      count: 0,
+      users: [],
+    };
+  });
+  const byId = Object.fromEntries(seasons.map((s) => [s.seasonId, s]));
+  const userSets = Object.fromEntries(seasons.map((s) => [s.seasonId, new Set()]));
+
+  const eligibleDocs = usersSnap.docs.filter((d) => !isAdminUser(userFromMap(d.id, d.data()), adminEmails));
+
+  const historyByUser = new Map();
+  await Promise.all(
+    eligibleDocs.map(async (d) => {
+      const histSnap = await getDocs(collection(firestore, 'users', d.id, 'seasonHistory'));
+      historyByUser.set(
+        d.id,
+        histSnap.docs.map((h) => ({ seasonId: h.id.toLowerCase(), ...h.data() })),
+      );
+    }),
+  );
+
+  for (const d of eligibleDocs) {
+    const user = userFromMap(d.id, d.data());
+    const currentSid = (d.data().currentSeasonId || DEFAULT_SEASON_ID).toLowerCase();
+
+    if (byId[currentSid]) {
+      userSets[currentSid].add(d.id);
+      byId[currentSid].users.push({ ...user, source: 'current' });
+    }
+
+    for (const h of historyByUser.get(d.id) || []) {
+      const sid = (h.seasonId || '').toLowerCase();
+      if (!byId[sid]) continue;
+      userSets[sid].add(d.id);
+      if (currentSid !== sid) {
+        byId[sid].users.push({
+          ...user,
+          score: Number(h.score || 0),
+          gamesPlayed: Number(h.gamesPlayed || 0),
+          gamesWon: Number(h.gamesWon || 0),
+          rank: Number(h.rank || 0),
+          source: 'archived',
+        });
+      }
+    }
+  }
+
+  for (const s of seasons) {
+    s.count = userSets[s.seasonId].size;
+    s.users.sort((a, b) => b.score - a.score || (a.name || '').localeCompare(b.name || ''));
+    s.users.forEach((u, i) => {
+      u.rank = i + 1;
+    });
+  }
+
+  return {
+    seasons,
+    currentSeasonId: config.seasonId.toLowerCase(),
+    getSeason(seasonId) {
+      return byId[seasonId.toLowerCase()] || null;
+    },
+  };
+}
+
+async function getAllSeasonUsers(seasonId) {
+  const config = await getSeasonConfig();
+  const index = await buildSeasonIndex(config);
+  const season = index.getSeason(seasonId);
+  return season ? season.users : [];
 }
 
 function seasonLabelForId(seasonId, fallbackLabel) {
@@ -1267,98 +1335,25 @@ function seasonLabelForId(seasonId, fallbackLabel) {
 }
 
 async function getSeasonComparison(oldId, newId, oldLabel, newLabel) {
-  const [oldUsers, newUsers] = await Promise.all([
-    getAllSeasonUsers(oldId),
-    getAllSeasonUsers(newId),
-  ]);
+  const config = await getSeasonConfig();
+  const index = await buildSeasonIndex(config);
+  const oldSeason = index.getSeason(oldId) || { seasonId: oldId, label: seasonLabelForId(oldId, oldLabel), count: 0, users: [] };
+  const newSeason = index.getSeason(newId) || { seasonId: newId, label: seasonLabelForId(newId, newLabel), count: 0, users: [] };
 
   return {
     oldSeason: {
       id: oldId.toLowerCase(),
-      label: seasonLabelForId(oldId, oldLabel),
-      count: oldUsers.length,
-      users: oldUsers,
+      label: oldLabel || oldSeason.label,
+      count: oldSeason.count,
+      users: oldSeason.users,
     },
     newSeason: {
       id: newId.toLowerCase(),
-      label: seasonLabelForId(newId, newLabel),
-      count: newUsers.length,
-      users: newUsers,
+      label: newLabel || newSeason.label,
+      count: newSeason.count,
+      users: newSeason.users,
     },
   };
-}
-
-/**
- * All seasons overview: users are counted per season using currentSeasonId + seasonHistory.
- * A user who played S1 then S2 appears in both seasons (S1 from history, S2 from current).
- */
-async function getSeasonOverview() {
-  await ensureDb();
-  const { getDocs, collectionGroup } = await fs();
-  const config = await getSeasonConfig();
-  const adminEmails = await resolveAdminEmails();
-  const [usersSnap, historySnap] = await Promise.all([
-    getDocs(usersCol),
-    getDocs(collectionGroup(firestore, 'seasonHistory')).catch(() => ({ docs: [] })),
-  ]);
-
-  const seasonMaps = {};
-  for (let n = 1; n <= config.seasonNumber; n++) {
-    seasonMaps[`s${n}`] = new Map();
-  }
-
-  const userById = new Map();
-  usersSnap.docs.forEach((d) => {
-    userById.set(d.id, userFromMap(d.id, d.data()));
-  });
-
-  historySnap.docs.forEach((hDoc) => {
-    const seasonId = hDoc.id.toLowerCase();
-    if (!seasonMaps[seasonId]) return;
-    const parts = hDoc.ref.path.split('/');
-    const userId = parts[1];
-    const base = userById.get(userId);
-    if (!base || isAdminUser(base, adminEmails)) return;
-    const h = hDoc.data();
-    seasonMaps[seasonId].set(userId, {
-      ...base,
-      score: Number(h.score || 0),
-      gamesPlayed: Number(h.gamesPlayed || 0),
-      gamesWon: Number(h.gamesWon || 0),
-      rank: Number(h.rank || 0),
-      seasonStatus: 'archived',
-      archivedAt: Number(h.archivedAt || 0),
-    });
-  });
-
-  usersSnap.docs.forEach((d) => {
-    const user = userFromMap(d.id, d.data());
-    if (isAdminUser(user, adminEmails)) return;
-    const sid = (d.data().currentSeasonId || DEFAULT_SEASON_ID).toLowerCase();
-    if (!seasonMaps[sid]) return;
-    seasonMaps[sid].set(d.id, { ...user, seasonStatus: 'active' });
-  });
-
-  const seasons = [];
-  for (let n = 1; n <= config.seasonNumber; n++) {
-    const id = `s${n}`;
-    const users = [...(seasonMaps[id]?.values() || [])]
-      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
-      .map((u, i) => ({ ...u, rank: i + 1 }));
-    seasons.push({
-      id,
-      number: n,
-      label: n === config.seasonNumber ? config.seasonLabel : `Season ${n}`,
-      count: users.length,
-      users,
-    });
-  }
-
-  return { seasons, currentSeasonId: config.seasonId, currentLabel: config.seasonLabel };
-}
-
-function seasonUsersForChart(season) {
-  return season?.users || [];
 }
 
 function buildEmptyTodayTasks() {
@@ -1662,13 +1657,12 @@ async function getAiRecords() {
 
 const CHART_COLORS = ['#22c55e', '#3b82f6', '#eab308', '#ec4899', '#a855f7', '#f97316', '#06b6d4', '#ef4444'];
 
-function renderBarChartSvg(labels, values, { yLabel = 'Count', xLabel = 'Category', markerId, seasonIds, selectedSeasonId } = {}) {
+function renderBarChartSvg(labels, values, { yLabel = 'Count', xLabel = 'Category', markerId } = {}) {
   if (!labels.length) {
     return '<p class="empty">No chart data yet.</p>';
   }
 
   const arrowId = markerId || `arrow-${Math.random().toString(36).slice(2, 9)}`;
-  const clickable = Array.isArray(seasonIds) && seasonIds.length === labels.length;
 
   const maxVal = Math.max(...values, 1);
   const yMax = Math.max(10, Math.ceil(maxVal / 5) * 5);
@@ -1676,15 +1670,15 @@ function renderBarChartSvg(labels, values, { yLabel = 'Count', xLabel = 'Categor
   const ticks = [];
   for (let v = 0; v <= yMax; v += tickStep) ticks.push(v);
 
-  const barW = Math.min(72, Math.max(44, Math.floor(520 / labels.length) - 24));
-  const gap = 24;
+  const barW = 56;
+  const gap = 32;
   const chartH = 260;
   const padL = 56;
   const padR = 28;
   const padT = 28;
   const padB = 88;
   const innerW = labels.length * barW + (labels.length - 1) * gap;
-  const width = Math.max(padL + innerW + padR, 320);
+  const width = padL + innerW + padR;
   const height = padT + chartH + padB;
   const gridLines = ticks
     .map((t) => {
@@ -1703,20 +1697,14 @@ function renderBarChartSvg(labels, values, { yLabel = 'Count', xLabel = 'Categor
   const bars = labels
     .map((label, i) => {
       const val = values[i];
-      const h = Math.max(val > 0 ? 4 : 2, (val / yMax) * chartH);
+      const h = Math.max(2, (val / yMax) * chartH);
       const x = padL + i * (barW + gap);
       const y = padT + chartH - h;
       const color = CHART_COLORS[i % CHART_COLORS.length];
       const guideY = y;
       const short = label.length > 12 ? `${label.slice(0, 11)}…` : label;
-      const sid = seasonIds?.[i] || '';
-      const selected = sid && sid === selectedSeasonId;
-      const barClass = clickable ? `chart-bar-clickable${selected ? ' is-selected' : ''}` : '';
-      const barAttrs = clickable
-        ? `class="${barClass}" data-season-id="${esc(sid)}" data-bar-index="${i}" role="button" tabindex="0" aria-label="${esc(label)} ${val} users"`
-        : '';
       return `
-        <rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${color}" rx="4" ${barAttrs}/>
+        <rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${color}" rx="4"/>
         <line x1="${padL - 4}" y1="${guideY}" x2="${x + barW / 2}" y2="${guideY}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#${arrowId})"/>
         <text class="chart-bar-value" x="${x + barW / 2}" y="${padT + chartH + 18}" text-anchor="middle">${val}</text>
         <text class="chart-bar-label" x="${x + barW / 2}" y="${padT + chartH + 38}" text-anchor="middle">${esc(short)}</text>
@@ -1725,7 +1713,7 @@ function renderBarChartSvg(labels, values, { yLabel = 'Count', xLabel = 'Categor
     .join('');
 
   return `
-    <div class="chart-wrap" data-season-chart="${clickable ? '1' : '0'}">
+    <div class="chart-wrap">
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(yLabel)} bar chart">
         <defs>
           <marker id="${arrowId}" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
@@ -1741,20 +1729,6 @@ function renderBarChartSvg(labels, values, { yLabel = 'Count', xLabel = 'Categor
     </div>`;
 }
 
-function bindSeasonBarClicks(root, onSelect) {
-  if (!root) return;
-  root.querySelectorAll('.chart-bar-clickable[data-season-id]').forEach((bar) => {
-    const pick = () => onSelect(bar.dataset.seasonId);
-    bar.onclick = pick;
-    bar.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        pick();
-      }
-    };
-  });
-}
-
 function renderSeasonUsersTable(users, emptyText) {
   if (!users.length) {
     return `<p class="empty">${esc(emptyText)}</p>`;
@@ -1765,7 +1739,7 @@ function renderSeasonUsersTable(users, emptyText) {
         <thead>
           <tr>
             <th>Rank</th><th>Player</th><th>Email</th><th>Code</th>
-            <th class="text-right">Score</th><th class="text-right">Games</th><th class="text-right">Wins</th><th>Status</th>
+            <th class="text-right">Score</th><th class="text-right">Games</th><th class="text-right">Wins</th><th>Data</th>
           </tr>
         </thead>
         <tbody>
@@ -1779,7 +1753,7 @@ function renderSeasonUsersTable(users, emptyText) {
             <td class="text-right">${u.score}</td>
             <td class="text-right">${u.gamesPlayed}</td>
             <td class="text-right">${u.gamesWon}</td>
-            <td>${u.seasonStatus === 'archived' ? '<span class="badge badge-muted">Saved in season</span>' : '<span class="badge badge-success">Active</span>'}</td>
+            <td>${u.source === 'archived' ? '<span class="badge badge-muted">Archived</span>' : '<span class="badge badge-success">Current</span>'}</td>
           </tr>`,
             )
             .join('')}
@@ -1912,10 +1886,10 @@ function userListHtml(users, empty) {
 }
 
 async function renderDashboard() {
-  const [stats, seasonOverview, resetMeta] = await Promise.all([
+  const [stats, resetMeta, config] = await Promise.all([
     getDashboardStats(),
-    getSeasonOverview(),
     getDailyResetMeta(),
+    getSeasonConfig(),
   ]);
 
   let resetNotice = '';
@@ -1933,9 +1907,9 @@ async function renderDashboard() {
 
   const statusLabels = ['Online', 'Login Today', 'Inactive'];
   const statusValues = [stats.activeNow, stats.activeToday, stats.inactiveUsers];
-  const seasonLabels = seasonOverview.seasons.map((s) => s.label);
-  const seasonValues = seasonOverview.seasons.map((s) => s.count);
-  const seasonIds = seasonOverview.seasons.map((s) => s.id);
+  const seasonIndex = await buildSeasonIndex(config);
+  const seasonLabels = seasonIndex.seasons.map((s) => s.label);
+  const seasonValues = seasonIndex.seasons.map((s) => s.count);
 
   pageContent.innerHTML = `
     <div class="page-header">
@@ -1961,12 +1935,10 @@ async function renderDashboard() {
         yLabel: 'Number of users',
         xLabel: 'User status',
       })}
-      ${renderChartPanel('All seasons (total users per season)', seasonLabels, seasonValues, {
+      ${renderChartPanel('All seasons (users saved per season)', seasonLabels, seasonValues, {
         id: 'chart-season-compare',
         yLabel: 'Total users',
         xLabel: 'Season',
-        seasonIds,
-        selectedSeasonId: seasonOverview.currentSeasonId,
       })}
     </div>
     <div class="stats-grid">
@@ -2332,46 +2304,51 @@ async function renderAi() {
 }
 
 async function renderSeason() {
-  const [config, overview] = await Promise.all([getSeasonConfig(), getSeasonOverview()]);
-
-  let selectedSeasonId = config.seasonId;
+  const config = await getSeasonConfig();
+  const seasonIndex = await buildSeasonIndex(config);
+  let selectedSeasonId = config.seasonId.toLowerCase();
   let showScoreUsers = true;
 
-  function getSeason(id) {
-    return overview.seasons.find((s) => s.id === id) || overview.seasons[overview.seasons.length - 1];
+  function getSelectedSeason() {
+    return seasonIndex.getSeason(selectedSeasonId) || seasonIndex.seasons[seasonIndex.seasons.length - 1];
   }
 
   pageContent.innerHTML = `
     <div class="page-header">
       <div>
         <h2>Season</h2>
-        <p class="subtitle">Each season keeps its own users — login in S2 does not remove S1 data</p>
+        <p class="subtitle">Each season keeps its own users — login in S1 stays in S1 even when user joins S2</p>
       </div>
       <div class="page-actions">
         <button class="btn btn-outline btn-sm" id="season-refresh">↻ Refresh</button>
       </div>
     </div>
-    <div class="stats-grid" id="season-stats-row">
-      ${overview.seasons
+    <div class="stats-grid">
+      <div class="stat-card"><div class="label">Active season</div><div class="value blue">${esc(config.seasonLabel)}</div></div>
+      ${seasonIndex.seasons
         .map(
           (s) => `
-        <div class="stat-card" data-stat-season="${s.id}">
-          <div class="label">${esc(s.label)}</div>
-          <div class="value${s.id === config.seasonId ? ' green' : ''}">${s.count}</div>
-        </div>`,
+      <div class="stat-card">
+        <div class="label">${esc(s.label)}</div>
+        <div class="value ${s.seasonId === seasonIndex.currentSeasonId ? 'green' : ''}">${s.count}</div>
+      </div>`,
         )
         .join('')}
     </div>
-    <div id="season-all-chart-slot"></div>
-    <div class="season-tab-row" id="season-pickers">
-      ${overview.seasons
-        .map(
-          (s) => `
-        <button type="button" class="btn btn-outline btn-sm season-picker-btn${s.id === selectedSeasonId ? ' active' : ''}" data-season-id="${s.id}">
-          ${esc(s.label)} (${s.count})
-        </button>`,
-        )
-        .join('')}
+    <div id="season-overview-chart-slot"></div>
+    <div class="panel">
+      <h3>Pick a season — top players graph updates</h3>
+      <div class="season-pick-row" id="season-pick-row">
+        ${seasonIndex.seasons
+          .map(
+            (s) => `
+          <button type="button" class="btn btn-outline btn-sm ${s.seasonId === selectedSeasonId ? 'active' : ''} ${s.seasonId === seasonIndex.currentSeasonId ? 'current' : ''}" data-season-id="${esc(s.seasonId)}">
+            ${esc(s.label)} (${s.count})
+          </button>`,
+          )
+          .join('')}
+      </div>
+      <p class="subtitle" id="season-pick-hint">Showing top players for <strong>${esc(getSelectedSeason().label)}</strong> — ${getSelectedSeason().count} total users</p>
     </div>
     <div id="season-scores-chart-slot"></div>
     <div class="panel">
@@ -2399,43 +2376,37 @@ async function renderSeason() {
 
   const msg = $('#season-msg');
 
-  function renderAllSeasonsChart() {
-    const labels = overview.seasons.map((s) => s.label);
-    const values = overview.seasons.map((s) => s.count);
-    const seasonIds = overview.seasons.map((s) => s.id);
-
-    $('#season-all-chart-slot').innerHTML = renderChartPanel(
-      'All seasons — click a bar to view users',
+  function renderOverviewChart() {
+    const labels = seasonIndex.seasons.map((s) => s.label);
+    const values = seasonIndex.seasons.map((s) => s.count);
+    $('#season-overview-chart-slot').innerHTML = renderChartPanel(
+      'All seasons — users per season',
       labels,
       values,
       {
         id: 'chart-all-seasons',
         yLabel: 'Total users',
         xLabel: 'Season',
-        seasonIds,
-        selectedSeasonId,
       },
     );
-    bindChartControls($('#season-all-chart-slot'));
-    bindSeasonBarClicks($('#season-all-chart-slot'), (id) => selectSeason(id));
+    bindChartControls($('#season-overview-chart-slot'));
   }
 
   function renderScoresChart() {
-    const season = getSeason(selectedSeasonId);
-    const users = seasonUsersForChart(season);
-    const labels = users.slice(0, 5).map((u) => u.name || playerId(u));
-    const values = users.slice(0, 5).map((u) => u.score);
+    const season = getSelectedSeason();
+    const labels = season.users.slice(0, 5).map((u) => u.name || playerId(u));
+    const values = season.users.slice(0, 5).map((u) => u.score);
     const usersBlock = showScoreUsers
       ? `<div class="season-users-panel" id="score-users-panel">
-          <h4>All users in ${esc(season.label)} (${users.length}) — saved per season</h4>
-          ${renderSeasonUsersTable(users, 'No users in this season yet.')}
+          <h4>All users in ${esc(season.label)} (${season.count})</h4>
+          ${renderSeasonUsersTable(season.users, 'No users in this season yet.')}
         </div>`
       : '';
 
     $('#season-scores-chart-slot').innerHTML = renderChartPanel(
       `Top scores — ${season.label}`,
-      labels.length ? labels : ['No players'],
-      labels.length ? values : [0],
+      labels,
+      values,
       {
         id: 'chart-season-scores',
         yLabel: 'Score',
@@ -2455,25 +2426,24 @@ async function renderSeason() {
     }
   }
 
-  function selectSeason(id) {
-    selectedSeasonId = id;
-    document.querySelectorAll('.season-picker-btn').forEach((b) => {
-      b.classList.toggle('active', b.dataset.seasonId === id);
+  function updateSeasonPickButtons() {
+    document.querySelectorAll('#season-pick-row button').forEach((btn) => {
+      const sid = btn.dataset.seasonId;
+      btn.classList.toggle('active', sid === selectedSeasonId);
     });
-    renderAllSeasonsChart();
-    renderScoresChart();
-    const s = getSeason(id);
-    msg.textContent = `${s.label}: ${s.count} users (active + saved from season history)`;
+    const season = getSelectedSeason();
+    $('#season-pick-hint').innerHTML = `Showing top players for <strong>${esc(season.label)}</strong> — ${season.count} total users (saved in this season)`;
   }
 
-  renderAllSeasonsChart();
+  renderOverviewChart();
   renderScoresChart();
-  msg.textContent = `Click a season bar or button to view all users. Current: ${config.seasonLabel}.`;
 
-  $('#season-pickers').onclick = (e) => {
-    const btn = e.target.closest('[data-season-id]');
+  $('#season-pick-row').onclick = (e) => {
+    const btn = e.target.closest('button[data-season-id]');
     if (!btn) return;
-    selectSeason(btn.dataset.seasonId);
+    selectedSeasonId = btn.dataset.seasonId;
+    updateSeasonPickButtons();
+    renderScoresChart();
   };
 
   $('#season-refresh').onclick = () => void renderSeason();
@@ -2483,7 +2453,7 @@ async function renderSeason() {
     $('#season-number').value = String(nextNum);
     $('#season-id').value = `s${nextNum}`;
     $('#season-label').value = `Season ${nextNum}`;
-    msg.textContent = 'Fields updated — click Save config to apply.';
+    msg.textContent = 'Fields updated — click Save config to apply. New season button will appear after save.';
   };
 
   $('#season-form').onsubmit = async (e) => {
@@ -2501,7 +2471,7 @@ async function renderSeason() {
         throw new Error('All season fields are required.');
       }
       await saveSeasonConfig(next);
-      msg.textContent = 'Season config saved to Firestore.';
+      msg.textContent = 'Season config saved. Users who login now are saved in the new season; old season data stays in seasonHistory.';
       await renderSeason();
     } catch (err) {
       msg.textContent = err.message || 'Failed to save season config.';
