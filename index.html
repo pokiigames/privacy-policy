@@ -1854,18 +1854,46 @@ function navigate(page, param) {
   location.hash = param ? `#/${page}/${param}` : `#/${page}`;
 }
 
-async function route() {
-  setActiveNav();
+async function route(options = {}) {
+  const soft = options.soft === true;
   const parts = (location.hash.slice(2) || 'dashboard').split('/');
   const page = parts[0];
   const param = parts[1];
   const fn = routes[page] || routes.dashboard;
-  pageContent.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-  try {
-    await fn(param);
-  } catch (e) {
-    pageContent.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+
+  if (!soft) {
+    setActiveNav();
+    pageContent.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  } else if (page === 'user-detail') {
+    return;
   }
+
+  try {
+    await fn(param, { soft });
+  } catch (e) {
+    if (!soft) {
+      pageContent.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+    }
+  }
+}
+
+let usersPageState = null;
+let seasonPageState = { selectedSeasonId: null, showScoreUsers: true };
+let adminRefreshTimer = null;
+
+function stopAdminAutoRefresh() {
+  if (adminRefreshTimer) {
+    clearInterval(adminRefreshTimer);
+    adminRefreshTimer = null;
+  }
+}
+
+function startAdminAutoRefresh() {
+  stopAdminAutoRefresh();
+  adminRefreshTimer = setInterval(() => {
+    if (!isAdmin || document.hidden) return;
+    void route({ soft: true });
+  }, 100);
 }
 
 function userListHtml(users, empty) {
@@ -1885,12 +1913,40 @@ function userListHtml(users, empty) {
     .join('')}</ul>`;
 }
 
-async function renderDashboard() {
+async function renderDashboard(_param, options = {}) {
+  const soft = options.soft === true;
   const [stats, resetMeta, config] = await Promise.all([
     getDashboardStats(),
     getDailyResetMeta(),
     getSeasonConfig(),
   ]);
+  const seasonIndex = await buildSeasonIndex(config);
+  const seasonLabels = seasonIndex.seasons.map((s) => s.label);
+  const seasonValues = seasonIndex.seasons.map((s) => s.count);
+
+  if (soft && $('#dash-stat-total')) {
+    $('#dash-stat-total').textContent = stats.totalUsers;
+    $('#dash-stat-online').textContent = stats.activeNow;
+    $('#dash-stat-today').textContent = stats.activeToday;
+    $('#dash-stat-inactive').textContent = stats.inactiveUsers;
+    $('#dash-subtitle').textContent = `Updated ${fmtDate(stats.generatedAt)} • Auto-refresh 100ms`;
+    const onlinePanel = $('#dash-panel-online');
+    const todayPanel = $('#dash-panel-today');
+    const inactivePanel = $('#dash-panel-inactive');
+    if (onlinePanel) onlinePanel.innerHTML = `<h3>Online now</h3>${userListHtml(stats.online, 'No users online.')}`;
+    if (todayPanel) todayPanel.innerHTML = `<h3>Logged in today</h3>${userListHtml([...stats.online, ...stats.today], 'No users logged in today.')}`;
+    if (inactivePanel) inactivePanel.innerHTML = `<h3>Inactive / banned</h3>${userListHtml(stats.inactive, 'No inactive users.')}`;
+    const chartSlot = $('#dash-season-chart-slot');
+    if (chartSlot) {
+      chartSlot.innerHTML = renderChartPanel('All seasons (users saved per season)', seasonLabels, seasonValues, {
+        id: 'chart-season-compare',
+        yLabel: 'Total users',
+        xLabel: 'Season',
+      });
+      bindChartControls(chartSlot);
+    }
+    return;
+  }
 
   let resetNotice = '';
   const today = todayKey();
@@ -1907,15 +1963,12 @@ async function renderDashboard() {
 
   const statusLabels = ['Online', 'Login Today', 'Inactive'];
   const statusValues = [stats.activeNow, stats.activeToday, stats.inactiveUsers];
-  const seasonIndex = await buildSeasonIndex(config);
-  const seasonLabels = seasonIndex.seasons.map((s) => s.label);
-  const seasonValues = seasonIndex.seasons.map((s) => s.count);
 
   pageContent.innerHTML = `
     <div class="page-header">
       <div>
         <h2>Dashboard</h2>
-        <p class="subtitle">Updated ${fmtDate(stats.generatedAt)} • Login today resets at 12:00 AM</p>
+        <p class="subtitle" id="dash-subtitle">Updated ${fmtDate(stats.generatedAt)} • Auto-refresh 100ms</p>
       </div>
       <div class="page-actions">
         <button class="btn btn-outline btn-sm" id="dash-reset-tasks">Reset daily tasks</button>
@@ -1924,12 +1977,12 @@ async function renderDashboard() {
     </div>
     ${resetNotice}
     <div class="stats-grid">
-      <div class="stat-card"><div class="label">Total users</div><div class="value">${stats.totalUsers}</div></div>
-      <div class="stat-card"><div class="label">Online now (5 min)</div><div class="value green">${stats.activeNow}</div></div>
-      <div class="stat-card"><div class="label">Logged in today</div><div class="value blue">${stats.activeToday}</div></div>
-      <div class="stat-card"><div class="label">Inactive / banned</div><div class="value">${stats.inactiveUsers}</div></div>
+      <div class="stat-card"><div class="label">Total users</div><div class="value" id="dash-stat-total">${stats.totalUsers}</div></div>
+      <div class="stat-card"><div class="label">Online now (5 min)</div><div class="value green" id="dash-stat-online">${stats.activeNow}</div></div>
+      <div class="stat-card"><div class="label">Logged in today</div><div class="value blue" id="dash-stat-today">${stats.activeToday}</div></div>
+      <div class="stat-card"><div class="label">Inactive / banned</div><div class="value" id="dash-stat-inactive">${stats.inactiveUsers}</div></div>
     </div>
-    <div class="charts-row">
+    <div class="charts-row" id="dash-season-chart-slot">
       ${renderChartPanel('User status', statusLabels, statusValues, {
         id: 'chart-user-status',
         yLabel: 'Number of users',
@@ -1942,9 +1995,9 @@ async function renderDashboard() {
       })}
     </div>
     <div class="stats-grid">
-      <div class="panel"><h3>Online now</h3>${userListHtml(stats.online, 'No users online.')}</div>
-      <div class="panel"><h3>Logged in today</h3>${userListHtml([...stats.online, ...stats.today], 'No users logged in today.')}</div>
-      <div class="panel"><h3>Inactive / banned</h3>${userListHtml(stats.inactive, 'No inactive users.')}</div>
+      <div class="panel" id="dash-panel-online"><h3>Online now</h3>${userListHtml(stats.online, 'No users online.')}</div>
+      <div class="panel" id="dash-panel-today"><h3>Logged in today</h3>${userListHtml([...stats.online, ...stats.today], 'No users logged in today.')}</div>
+      <div class="panel" id="dash-panel-inactive"><h3>Inactive / banned</h3>${userListHtml(stats.inactive, 'No inactive users.')}</div>
     </div>
     <p id="dash-msg" class="subtitle"></p>`;
 
@@ -1966,20 +2019,62 @@ async function renderDashboard() {
   };
 }
 
-async function renderUsers() {
-  let tab = 'all';
-  let query = '';
+async function renderUsers(_param, options = {}) {
+  const soft = options.soft === true;
+  const config = await getSeasonConfig();
+  const seasonIndex = await buildSeasonIndex(config);
 
-  async function load() {
-    const users = query.trim()
-      ? await searchUsers(query)
-      : tab === 'top'
-        ? await getTopUsers()
-        : await getAllUsers();
+  if (!usersPageState || !soft) {
+    usersPageState = {
+      tab: usersPageState?.tab || 'all',
+      query: usersPageState?.query || '',
+      selectedSeasonId: usersPageState?.selectedSeasonId || config.seasonId.toLowerCase(),
+    };
+  }
+
+  usersPageState.seasonIndex = seasonIndex;
+  usersPageState.config = config;
+
+  function seasonUsersForTable() {
+    const season = seasonIndex.getSeason(usersPageState.selectedSeasonId);
+    if (!season) return [];
+    let users = season.users.map((u) => ({ ...u }));
+    if (usersPageState.tab === 'top') {
+      users.sort((a, b) => b.score - a.score || (a.name || '').localeCompare(b.name || ''));
+      users.forEach((u, i) => {
+        u.rank = i + 1;
+      });
+    } else {
+      users.sort((a, b) => b.lastUpdated - a.lastUpdated);
+    }
+    const q = usersPageState.query.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter(
+      (u) =>
+        (u.name || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        playerId(u).toLowerCase().includes(q),
+    );
+  }
+
+  function renderUsersTableBody() {
+    const users = seasonUsersForTable();
+    const season = seasonIndex.getSeason(usersPageState.selectedSeasonId);
+    $('#users-season-hint').textContent = season
+      ? `${season.label} (${season.count} users) • Auto-refresh 100ms`
+      : 'Season not found';
+
+    document.querySelectorAll('#users-season-row button').forEach((btn) => {
+      const sid = btn.dataset.seasonId;
+      const s = seasonIndex.getSeason(sid);
+      btn.textContent = s ? `${s.label} (${s.count})` : sid.toUpperCase();
+      btn.classList.toggle('active', sid === usersPageState.selectedSeasonId);
+      btn.classList.toggle('current', sid === seasonIndex.currentSeasonId);
+    });
 
     $('#users-table-body').innerHTML =
       users.length === 0
-        ? '<tr><td colspan="7" class="empty">No users found</td></tr>'
+        ? '<tr><td colspan="8" class="empty">No users in this season</td></tr>'
         : users
             .map(
               (u) => `
@@ -1988,9 +2083,10 @@ async function renderUsers() {
         <td>${esc(u.email)}</td>
         <td>${esc(playerId(u))}</td>
         <td class="text-right">${u.score}</td>
-        <td class="text-right">${u.rank || '—'}</td>
+        <td class="text-right">${usersPageState.tab === 'top' ? u.rank : u.rank || '—'}</td>
         <td>${fmtRelative(u.lastUpdated)}</td>
         <td>${isBanned(u) ? '<span class="badge badge-danger">Banned</span>' : '<span class="badge badge-success">Active</span>'}</td>
+        <td>${u.source === 'archived' ? '<span class="badge badge-muted">Archived</span>' : '<span class="badge badge-info">Current</span>'}</td>
       </tr>`,
             )
             .join('');
@@ -2000,24 +2096,43 @@ async function renderUsers() {
     });
   }
 
+  if (soft && $('#users-table-body')) {
+    renderUsersTableBody();
+    return;
+  }
+
   pageContent.innerHTML = `
     <div class="page-header">
-      <div><h2>Users</h2><p class="subtitle">Search by name, email, or player code</p></div>
+      <div><h2>Users</h2><p class="subtitle">Search by name, email, or player code — filtered by season</p></div>
       <div class="page-actions">
         <div class="toggle-group" id="users-tab">
-          <button data-tab="all" class="active">All users</button>
-          <button data-tab="top">Top scores</button>
+          <button data-tab="all" class="${usersPageState.tab === 'all' ? 'active' : ''}">All users</button>
+          <button data-tab="top" class="${usersPageState.tab === 'top' ? 'active' : ''}">Top scores</button>
         </div>
         <button class="btn btn-outline btn-sm" id="users-refresh">↻ Refresh</button>
       </div>
     </div>
-    <input class="search-input" id="users-search" placeholder="Search players..." />
+    <div class="panel" style="margin-bottom:1rem;padding:1rem 1.25rem">
+      <h3 style="margin-bottom:0.75rem;font-size:0.95rem">Season</h3>
+      <div class="season-pick-row" id="users-season-row">
+        ${seasonIndex.seasons
+          .map(
+            (s) => `
+          <button type="button" class="btn btn-outline btn-sm ${s.seasonId === usersPageState.selectedSeasonId ? 'active' : ''} ${s.seasonId === seasonIndex.currentSeasonId ? 'current' : ''}" data-season-id="${esc(s.seasonId)}">
+            ${esc(s.label)} (${s.count})
+          </button>`,
+          )
+          .join('')}
+      </div>
+      <p class="subtitle" id="users-season-hint"></p>
+    </div>
+    <input class="search-input" id="users-search" placeholder="Search players..." value="${esc(usersPageState.query)}" />
     <div class="table-wrap">
       <table>
         <thead><tr>
           <th>Player</th><th>Email</th><th>Code</th>
           <th class="text-right">Score</th><th class="text-right">Rank</th>
-          <th>Last active</th><th>Status</th>
+          <th>Last active</th><th>Status</th><th>Season data</th>
         </tr></thead>
         <tbody id="users-table-body"></tbody>
       </table>
@@ -2026,16 +2141,23 @@ async function renderUsers() {
   $('#users-tab').onclick = (e) => {
     const btn = e.target.closest('button[data-tab]');
     if (!btn) return;
-    tab = btn.dataset.tab;
+    usersPageState.tab = btn.dataset.tab;
     document.querySelectorAll('#users-tab button').forEach((b) => b.classList.toggle('active', b === btn));
-    void load();
+    renderUsersTableBody();
   };
   $('#users-search').oninput = (e) => {
-    query = e.target.value;
-    void load();
+    usersPageState.query = e.target.value;
+    renderUsersTableBody();
   };
-  $('#users-refresh').onclick = () => void load();
-  await load();
+  $('#users-refresh').onclick = () => void renderUsers(null, { soft: false });
+  $('#users-season-row').onclick = (e) => {
+    const btn = e.target.closest('button[data-season-id]');
+    if (!btn) return;
+    usersPageState.selectedSeasonId = btn.dataset.seasonId;
+    renderUsersTableBody();
+  };
+
+  renderUsersTableBody();
 }
 
 async function renderUserDetail(userId) {
@@ -2303,11 +2425,73 @@ async function renderAi() {
     </div>`;
 }
 
-async function renderSeason() {
+async function renderSeason(_param, options = {}) {
+  const soft = options.soft === true;
   const config = await getSeasonConfig();
   const seasonIndex = await buildSeasonIndex(config);
-  let selectedSeasonId = config.seasonId.toLowerCase();
-  let showScoreUsers = true;
+
+  if (soft && $('#season-scores-chart-slot')) {
+    const selectedSeasonId = seasonPageState.selectedSeasonId || config.seasonId.toLowerCase();
+    document.querySelectorAll('#season-pick-row button').forEach((btn) => {
+      const sid = btn.dataset.seasonId;
+      const s = seasonIndex.getSeason(sid);
+      if (s) btn.textContent = `${s.label} (${s.count})`;
+      btn.classList.toggle('active', sid === selectedSeasonId);
+    });
+    const season = seasonIndex.getSeason(selectedSeasonId);
+    if (season) {
+      const labels = season.users.slice(0, 5).map((u) => u.name || playerId(u));
+      const values = season.users.slice(0, 5).map((u) => u.score);
+      const overviewLabels = seasonIndex.seasons.map((s) => s.label);
+      const overviewValues = seasonIndex.seasons.map((s) => s.count);
+      const overviewSlot = $('#season-overview-chart-slot');
+      if (overviewSlot) {
+        overviewSlot.innerHTML = renderChartPanel('All seasons — users per season', overviewLabels, overviewValues, {
+          id: 'chart-all-seasons',
+          yLabel: 'Total users',
+          xLabel: 'Season',
+        });
+        bindChartControls(overviewSlot);
+      }
+      const usersBlock = seasonPageState.showScoreUsers
+        ? `<div class="season-users-panel" id="score-users-panel">
+            <h4>All users in ${esc(season.label)} (${season.count})</h4>
+            ${renderSeasonUsersTable(season.users, 'No users in this season yet.')}
+          </div>`
+        : '';
+      $('#season-scores-chart-slot').innerHTML = renderChartPanel(
+        `Top scores — ${season.label}`,
+        labels,
+        values,
+        {
+          id: 'chart-season-scores',
+          yLabel: 'Score',
+          xLabel: 'Top players',
+          extraButton: seasonPageState.showScoreUsers ? 'Hide users' : 'All users',
+          extraButtonId: 'toggle-score-users',
+          bodyBelow: usersBlock,
+        },
+      );
+      bindChartControls($('#season-scores-chart-slot'));
+      const toggleBtn = $('#season-scores-chart-slot').querySelector('[data-extra-btn="toggle-score-users"]');
+      if (toggleBtn) {
+        toggleBtn.onclick = () => {
+          seasonPageState.showScoreUsers = !seasonPageState.showScoreUsers;
+          void renderSeason(null, { soft: true });
+        };
+      }
+      const hint = $('#season-pick-hint');
+      if (hint) {
+        hint.innerHTML = `Showing top players for <strong>${esc(season.label)}</strong> — ${season.count} total users`;
+      }
+    }
+    return;
+  }
+
+  let selectedSeasonId = seasonPageState.selectedSeasonId || config.seasonId.toLowerCase();
+  let showScoreUsers = seasonPageState.showScoreUsers;
+  seasonPageState.selectedSeasonId = selectedSeasonId;
+  seasonPageState.showScoreUsers = showScoreUsers;
 
   function getSelectedSeason() {
     return seasonIndex.getSeason(selectedSeasonId) || seasonIndex.seasons[seasonIndex.seasons.length - 1];
@@ -2317,7 +2501,7 @@ async function renderSeason() {
     <div class="page-header">
       <div>
         <h2>Season</h2>
-        <p class="subtitle">Each season keeps its own users — login in S1 stays in S1 even when user joins S2</p>
+        <p class="subtitle">Each season keeps its own users — auto-refresh 100ms</p>
       </div>
       <div class="page-actions">
         <button class="btn btn-outline btn-sm" id="season-refresh">↻ Refresh</button>
@@ -2421,6 +2605,7 @@ async function renderSeason() {
     if (toggleBtn) {
       toggleBtn.onclick = () => {
         showScoreUsers = !showScoreUsers;
+        seasonPageState.showScoreUsers = showScoreUsers;
         renderScoresChart();
       };
     }
@@ -2442,6 +2627,7 @@ async function renderSeason() {
     const btn = e.target.closest('button[data-season-id]');
     if (!btn) return;
     selectedSeasonId = btn.dataset.seasonId;
+    seasonPageState.selectedSeasonId = selectedSeasonId;
     updateSeasonPickButtons();
     renderScoresChart();
   };
@@ -2503,8 +2689,14 @@ signInBtn.onclick = async () => {
     }
   }
 };
-$('#btn-signout-denied').onclick = () => signOut(auth);
-$('#btn-signout').onclick = () => signOut(auth);
+$('#btn-signout-denied').onclick = () => {
+  stopAdminAutoRefresh();
+  signOut(auth);
+};
+$('#btn-signout').onclick = () => {
+  stopAdminAutoRefresh();
+  signOut(auth);
+};
 $('#menu-btn').onclick = () => sidebar.classList.toggle('open');
 
 window.navigate = navigate;
@@ -2512,6 +2704,7 @@ window.navigate = navigate;
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (!user) {
+    stopAdminAutoRefresh();
     signInBtn.disabled = false;
     signInBtn.innerHTML = `
       <svg width="18" height="18" viewBox="0 0 24 24">
@@ -2538,6 +2731,7 @@ onAuthStateChanged(auth, async (user) => {
   if (user.photoURL) $('#user-avatar').src = user.photoURL;
 
   if (!location.hash || location.hash === '#') location.hash = '#/dashboard';
+  startAdminAutoRefresh();
   await route();
 });
 
