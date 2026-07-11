@@ -1602,6 +1602,42 @@ function parseRtdbRooms(snap) {
   return snap.exists() ? snap.val() : null;
 }
 
+function resolveMatchWinner(data, hostName, guestName, hostScore, guestScore) {
+  const raw = String(data.tournamentWinner || data.winner || '').trim();
+  const token = raw.toLowerCase();
+
+  const hostWin = { label: hostName, kind: 'host' };
+  const guestWin = { label: guestName, kind: 'guest' };
+  const draw = { label: 'Draw', kind: 'draw' };
+
+  if (token === 'host' || token === 'x' || token === 'white') return hostWin;
+  if (token === 'guest' || token === 'o' || token === 'black') return guestWin;
+  if (token === 'draw') return draw;
+
+  if (raw && data.host && raw === data.host) return hostWin;
+  if (raw && data.guest && raw === data.guest) return guestWin;
+  if (raw && raw === hostName) return hostWin;
+  if (raw && raw === guestName) return guestWin;
+
+  if (hostScore > guestScore) return hostWin;
+  if (guestScore > hostScore) return guestWin;
+  if (raw) return { label: raw, kind: 'other' };
+  return draw;
+}
+
+function winnerBadgeHtml(winner) {
+  if (!winner || winner.kind === 'draw') {
+    return '<span class="badge badge-muted">Draw</span>';
+  }
+  if (winner.kind === 'host') {
+    return `<span class="badge badge-success">🏆 ${esc(winner.label)}</span>`;
+  }
+  if (winner.kind === 'guest') {
+    return `<span class="badge badge-info">🏆 ${esc(winner.label)}</span>`;
+  }
+  return `<span class="badge badge-success">🏆 ${esc(winner.label)}</span>`;
+}
+
 async function getMatches(aiOnly) {
   const { get, ref } = await rtdbApi();
   const snaps = await Promise.all(GAME_PATHS.map(({ path }) => get(ref(rtdb, path))));
@@ -1614,17 +1650,25 @@ async function getMatches(aiOnly) {
       const isAi = isAiRoom(data);
       if (aiOnly && !isAi) continue;
       if (!aiOnly && isAi) continue;
-      if (data.gameEnded !== true) continue;
+      const ended = data.gameEnded === true || data.tournamentEnded === true;
+      if (!ended) continue;
+      const hostName = data.hostName || 'Host';
+      const guestName = data.guestName || 'Guest';
+      const hostScore = Number(data.hostScore ?? data.hostWins ?? 0);
+      const guestScore = Number(data.guestScore ?? data.guestWins ?? 0);
+      const winner = resolveMatchWinner(data, hostName, guestName, hostScore, guestScore);
       const endedAt = Number(data.matchEndsAt ?? data.createdAt ?? 0);
       records.push({
         gamePath: path,
         gameType: label,
         roomCode: code,
-        hostName: data.hostName || 'Host',
-        guestName: data.guestName || 'Guest',
-        hostScore: Number(data.hostScore ?? data.hostWins ?? 0),
-        guestScore: Number(data.guestScore ?? data.guestWins ?? 0),
-        winner: data.winner || '',
+        hostName,
+        guestName,
+        hostScore,
+        guestScore,
+        winner: winner.label,
+        winnerKind: winner.kind,
+        winnerHtml: winnerBadgeHtml(winner),
         betAmount: Number(data.betAmount ?? 0),
         endedAt,
         isAi: isAi,
@@ -2526,7 +2570,7 @@ async function renderMatches(_param, options = {}) {
     const countEl = $('#matches-count');
     const countText = `${records.length} completed match${records.length === 1 ? '' : 'es'}`;
     setTextIfChanged(countEl, countText);
-    const rowKey = records.map((r) => `${r.gamePath}/${r.roomCode}:${r.endedAt}`).join('|');
+    const rowKey = records.map((r) => `${r.gamePath}/${r.roomCode}:${r.endedAt}:${r.winner}`).join('|');
     if (matchesPageState?.rowKey === rowKey && $('#matches-body')?.children.length) return;
     if (matchesPageState) matchesPageState.rowKey = rowKey;
 
@@ -2541,7 +2585,7 @@ async function renderMatches(_param, options = {}) {
         <td>${esc(r.hostName)}</td>
         <td>${esc(r.guestName)}${r.isAi ? ' <span class="badge badge-info">AI</span>' : ''}</td>
         <td class="text-right">${r.hostScore} - ${r.guestScore}</td>
-        <td>${esc(r.winner || '—')}</td>
+        <td>${r.winnerHtml || winnerBadgeHtml({ label: r.winner || 'Draw', kind: r.winnerKind || 'draw' })}</td>
         <td class="text-right">${r.betAmount}</td>
         <td>${fmtDate(r.endedAt)}</td>
         <td><button type="button" class="btn btn-danger btn-sm btn-del-match">Delete</button></td>
